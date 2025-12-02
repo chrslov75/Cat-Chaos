@@ -3,37 +3,35 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Stop the Cats!</title>
+<title>Stop the Cats! — Improved</title>
 <style>
   :root{
-    --bg:#f2efe9; --floor:#d9cdbf; --hud:#2b2b2b;
-    --nibbles:#ff9f1c; --dusty:#ffb76b; --chester:#9aa0a6; --kermit:#111;
-    --oscar:#ffffff; --lamp:#f3d08a; --vase:#7fb7c9; --glass:#bfe6ff;
-    --accent:#5b7c99;
+    --bg:#f3f2ef; --wall:#efe9e2; --floor:#ded1c3; --accent:#3e6b85;
+    --nibbles:#ff8a2b; --dusty:#ffbe6b; --chester:#9aa0a6; --kermit:#111111; --oscar:#ffffff;
+    --lamp:#f3d08a; --vase:#6fb3c6; --glass:#bfe6ff; --cup:#e8d7c4;
   }
   *{box-sizing:border-box}
-  html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;background:var(--bg);display:flex;align-items:center;justify-content:center;color:var(--hud)}
-  .wrap{width:980px;max-width:96vw;padding:18px 16px;display:flex;flex-direction:column;gap:12px;align-items:center}
-  canvas{background:linear-gradient(#fff 0 55%, #efe9df 55%);border-radius:12px;box-shadow:0 14px 40px rgba(15,20,30,0.12);display:block}
+  html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;background:var(--bg);display:flex;align-items:center;justify-content:center;color:#2b3a3f}
+  .wrap{width:980px;max-width:96vw;padding:18px;display:flex;flex-direction:column;gap:12px;align-items:center}
+  canvas{border-radius:12px;box-shadow:0 18px 50px rgba(20,30,40,0.12);display:block;background:linear-gradient(#fff 0 55%, #efe9df 55%)}
   .hud{width:100%;display:flex;justify-content:space-between;align-items:center;font-weight:700}
   .controls{display:flex;gap:8px;align-items:center}
   button{padding:8px 12px;border-radius:8px;border:0;background:var(--accent);color:#fff;cursor:pointer}
-  .legend{display:flex;gap:12px;align-items:center;font-size:13px;color:#444}
-  .dot{width:14px;height:14px;border-radius:50%;display:inline-block;margin-right:6px;border:1px solid rgba(0,0,0,0.08)}
-  .info{font-size:13px;color:#444}
+  .legend{display:flex;gap:12px;align-items:center;font-size:13px;color:#445}
+  .dot{width:14px;height:14px;border-radius:50%;display:inline-block;margin-right:6px;border:1px solid rgba(0,0,0,0.06)}
   small{opacity:.8}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="hud">
-    <div class="info">Lives: <span id="lives">3</span> • Score: <span id="score">0</span></div>
+    <div>Lives: <span id="lives">3</span> • Score: <span id="score">0</span></div>
     <div class="legend">
-      <div><span class="dot" style="background:var(--nibbles)"></span>Nibbles (orange)</div>
-      <div><span class="dot" style="background:var(--dusty)"></span>Dusty (orange)</div>
-      <div><span class="dot" style="background:var(--chester)"></span>Chester (gray)</div>
-      <div><span class="dot" style="background:var(--kermit)"></span>Kermit (black, throws cups)</div>
-      <div><span class="dot" style="background:var(--oscar)"></span>Oscar (white)</div>
+      <div><span class="dot" style="background:var(--nibbles)"></span>Nibbles</div>
+      <div><span class="dot" style="background:var(--dusty)"></span>Dusty</div>
+      <div><span class="dot" style="background:var(--chester)"></span>Chester</div>
+      <div><span class="dot" style="background:var(--kermit)"></span>Kermit</div>
+      <div><span class="dot" style="background:var(--oscar)"></span>Oscar</div>
     </div>
     <div class="controls">
       <small>Click cats to shoo • Click items to secure</small>
@@ -42,102 +40,147 @@
     </div>
   </div>
 
-  <canvas id="game" width="940" height="520" aria-label="Stop the Cats game"></canvas>
+  <canvas id="game" width="980" height="560" aria-label="Stop the Cats game"></canvas>
 </div>
 
 <script>
 /*
-  Improved single-file "Stop the Cats!" game
-  - Removed Mango, added Oscar (white).
-  - Clearer objectives, better visuals and coherent gameplay.
-  - Click a cat to shoo it (points). Click an item to secure it briefly (points).
-  - Kermit (black) throws cups that can break items.
-  - Breaking an item costs a life and penalty to score. Protect all items to win.
+  Enhanced "Stop the Cats!" single-file game
+  - More detailed canvas graphics (shading, gradients, highlights).
+  - Fixed click detection (accounts for high-DPI scaling).
+  - Kermit throws glasses (glass projectiles). Other cats attempt to knock lamps, vases, cups.
+  - Click an item to secure it briefly. Click a cat to shoo it away.
+  - Improved behaviors and clearer feedback.
 */
 
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
+const ctx = canvas.getContext('2d', { alpha: false });
 const scoreEl = document.getElementById('score');
 const livesEl = document.getElementById('lives');
 const restartBtn = document.getElementById('restart');
 const muteBtn = document.getElementById('mute');
 
-let W = canvas.width, H = canvas.height;
+let W = 980, H = 560;
+let dpr = Math.max(1, window.devicePixelRatio || 1);
+let scale = dpr;
+canvas.style.width = W + 'px';
+canvas.style.height = H + 'px';
+canvas.width = Math.floor(W * dpr);
+canvas.height = Math.floor(H * dpr);
+ctx.setTransform(dpr,0,0,dpr,0,0);
+
+// Colors from CSS variables
+const CSS = getComputedStyle(document.documentElement);
+const COLORS = {
+  nibbles: CSS.getPropertyValue('--nibbles').trim() || '#ff8a2b',
+  dusty:   CSS.getPropertyValue('--dusty').trim()   || '#ffbe6b',
+  chester: CSS.getPropertyValue('--chester').trim() || '#9aa0a6',
+  kermit:  CSS.getPropertyValue('--kermit').trim()  || '#111111',
+  oscar:   CSS.getPropertyValue('--oscar').trim()   || '#ffffff',
+  lamp:    CSS.getPropertyValue('--lamp').trim()    || '#f3d08a',
+  vase:    CSS.getPropertyValue('--vase').trim()    || '#6fb3c6',
+  glass:   CSS.getPropertyValue('--glass').trim()   || '#bfe6ff',
+  cup:     CSS.getPropertyValue('--cup').trim()     || '#e8d7c4',
+  accent:  CSS.getPropertyValue('--accent').trim()  || '#3e6b85'
+};
+
+// Entities
+let cats = [], items = [], projectiles = [];
 let time = 0, running = true, muted = false;
 let score = 0, lives = 3, difficulty = 1;
 
-// Cat definitions (5 total): Nibbles, Dusty (orange), Chester (gray), Kermit (black, throws), Oscar (white)
+// Cat setup: Nibbles, Dusty, Chester, Kermit (throws glasses), Oscar
 const CAT_TYPES = [
-  {name:'Nibbles', color:getComputedStyle(document.documentElement).getPropertyValue('--nibbles').trim()},
-  {name:'Dusty',  color:getComputedStyle(document.documentElement).getPropertyValue('--dusty').trim()},
-  {name:'Chester',color:getComputedStyle(document.documentElement).getPropertyValue('--chester').trim()},
-  {name:'Kermit', color:getComputedStyle(document.documentElement).getPropertyValue('--kermit').trim(), throws:true},
-  {name:'Oscar',  color:getComputedStyle(document.documentElement).getPropertyValue('--oscar').trim()}
+  {name:'Nibbles', color:COLORS.nibbles},
+  {name:'Dusty',  color:COLORS.dusty},
+  {name:'Chester',color:COLORS.chester},
+  {name:'Kermit', color:COLORS.kermit, throws:true},
+  {name:'Oscar',  color:COLORS.oscar}
 ];
 
-let cats = [], items = [], projectiles = [];
+// Items layout (lamps, vases, cups/glasses)
+const ITEM_LAYOUT = [
+  {type:'lamp', x:220, y:140},
+  {type:'vase', x:450, y:110},
+  {type:'glass', x:660, y:140},
+  {type:'cup', x:320, y:230},
+  {type:'vase', x:760, y:230}
+];
 
-function reset(){
+function init(){
+  // reset stats
   time = 0; running = true; score = 0; lives = 3; difficulty = 1;
   projectiles = [];
-  // create cats spaced across floor
-  cats = CAT_TYPES.map((t,i) => ({
-    id:i, name:t.name, color:t.color, x: 80 + i*170 + (i%2 ? -10:10), y: H-90 - (i%2?6:0),
-    vx:(Math.random()>0.5?1:-1)* (0.6 + Math.random()*0.6), state:'idle', stateTimer:0, speed:0.9 + Math.random()*0.7, radius:22,
-    throws:!!t.throws, cooldown:1 + Math.random()*2
+
+  // create cats nicely spaced
+  cats = CAT_TYPES.map((t,i)=>{
+    const baseX = 80 + i*170 + (i%2 ? -10 : 10);
+    return {
+      id:i, name:t.name, color:t.color, x: baseX, y: H - 110 + (i%2?6:0),
+      vx: (Math.random()>0.5?1:-1) * (0.6 + Math.random()*0.8),
+      state:'idle', stateTimer:0, speed:0.9 + Math.random()*0.9, radius:26,
+      throws: !!t.throws, cooldown:1 + Math.random()*2
+    };
+  });
+
+  // items (with fancy initial rotation/wobble)
+  items = ITEM_LAYOUT.map((p,i)=>({
+    id:i, type:p.type, x:p.x, y:p.y, w:40, h:40,
+    broken:false, wobble: Math.random()*0.12, rot: (Math.random()-0.5)*0.06, protected:false
   }));
-  // items (lamps, vases, glasses) on surfaces
-  const pos = [{x:220,y:150},{x:420,y:120},{x:620,y:150},{x:320,y:240},{x:720,y:240}];
-  const types = ['lamp','vase','glass','vase','glass'];
-  items = pos.map((p,i)=>({
-    id:i, type:types[i], x:p.x, y:p.y, w:34, h:34,
-    broken:false, wobble:0, protected:false
-  }));
+
   updateHUD();
 }
-function updateHUD(){ scoreEl.textContent = score; livesEl.textContent = lives; }
 
-// Input: clicking cats to shoo / items to secure
+// Convert pointer coordinates to canvas-space accounting for CSS scaling and DPR
+function getCanvasCoords(evt){
+  const rect = canvas.getBoundingClientRect();
+  const cssX = evt.clientX - rect.left;
+  const cssY = evt.clientY - rect.top;
+  // convert to internal canvas coordinates in CSS px (we use ctx transform to map DPR)
+  return { x: cssX, y: cssY };
+}
+
+// Click handling
 canvas.addEventListener('pointerdown', (e)=>{
   if (!running) return;
-  const r = canvas.getBoundingClientRect();
-  const mx = (e.clientX - r.left) * (canvas.width / r.width);
-  const my = (e.clientY - r.top) * (canvas.height / r.height);
+  const {x:mx, y:my} = getCanvasCoords(e);
 
-  // items first: click to secure
+  // items first (secure)
   for (let it of items){
     if (it.broken) continue;
-    if (Math.abs(mx - it.x) < 40 && Math.abs(my - it.y) < 40){
+    if (Math.hypot(mx - it.x, my - it.y) < 44){
       it.protected = true;
       it.wobble = 0;
       score += 1;
       if (!muted) clickSound();
-      setTimeout(()=> it.protected = false, 1800);
+      setTimeout(()=> it.protected = false, 1600);
       updateHUD();
       return;
     }
   }
 
-  // cats: shoo
+  // cats: shoo if clicked
   for (let c of cats){
-    if (Math.hypot(mx - c.x, my - c.y) < 36){
+    if (Math.hypot(mx - c.x, my - c.y) < 42){
       shooCat(c, mx, my);
       return;
     }
   }
 });
 
-function shooCat(c, mx, my){
-  const ang = Math.atan2(c.y - my, c.x - mx);
-  c.vx = Math.cos(ang) * (2 + Math.random()*1.2);
-  c.state = 'scared';
-  c.stateTimer = 0.9 + Math.random()*0.8;
+// Shoo a cat (push away, give score)
+function shooCat(cat, mx, my){
+  const ang = Math.atan2(cat.y - my, cat.x - mx);
+  cat.vx = Math.cos(ang) * (2.2 + Math.random()*0.8);
+  cat.state = 'scared';
+  cat.stateTimer = 0.9 + Math.random()*0.9;
   score += 3;
   if (!muted) meowSound();
   updateHUD();
 }
 
-// Game loop
+// Game update loop
 let last = performance.now();
 function loop(now){
   const dt = Math.min(0.035, (now - last)/1000);
@@ -146,97 +189,108 @@ function loop(now){
     update(dt);
     draw();
   } else {
-    draw(); // draw final state
+    draw();
   }
   requestAnimationFrame(loop);
 }
 
 function update(dt){
   time += dt;
-  difficulty = 1 + Math.floor(time / 18);
+  difficulty = 1 + Math.floor(time / 20);
 
-  // cats behavior
+  // cats behavior and movement
   for (let c of cats){
     c.stateTimer -= dt;
-    // random chance to attempt mischief
-    if (c.state !== 'mischief' && Math.random() < 0.003 * difficulty){
+    // randomly begin mischief more often as difficulty increases
+    if (c.state !== 'mischief' && Math.random() < 0.0035 * difficulty){
       c.state = 'mischief';
-      c.stateTimer = 3 + Math.random()*3;
-      // pick target item
+      c.stateTimer = 2.5 + Math.random()*3.2;
       const live = items.filter(i=>!i.broken);
       c.target = live.length ? live[Math.floor(Math.random()*live.length)].id : null;
     }
     if (c.state === 'scared' && c.stateTimer <= 0) c.state = 'idle';
 
-    // movement
     if (c.state === 'mischief' && c.target != null){
       const it = items.find(x=>x.id === c.target);
       if (!it || it.broken) { c.state = 'idle'; continue; }
-      // approach item smoothly
+      // approach target smoothly
       const ang = Math.atan2(it.y - c.y, it.x - c.x);
-      c.x += Math.cos(ang) * (60 + difficulty*10) * dt * (c.speed*0.9);
-      // slight vertical bob
-      c.y += Math.sin(time*2 + c.id)*0.6*dt*30;
-      if (Math.hypot(c.x - it.x, c.y - it.y) < 36){
-        // attempt to knock over (if not protected)
-        if (!it.protected && Math.random() < 0.45 + 0.03 * difficulty){
-          breakItem(it, c);
+      c.x += Math.cos(ang) * (70 + difficulty*8) * dt * (c.speed*0.9);
+      c.y += Math.sin(time*2 + c.id) * 0.6 * dt * 28;
+      // if near, attempt to knock
+      if (Math.hypot(c.x - it.x, c.y - it.y) < 38){
+        if (!it.protected && Math.random() < 0.46 + 0.04 * difficulty){
+          // different cats have slightly different success rates
+          const base = (c.name === 'Chester') ? 0.55 : (c.name === 'Nibbles' || c.name === 'Dusty') ? 0.6 : 0.45;
+          if (Math.random() < base + 0.03 * difficulty){
+            knockItem(it, c);
+          } else {
+            it.wobble = Math.min(1.2, it.wobble + 0.6);
+          }
         } else {
-          it.wobble = Math.min(1.1, it.wobble + 0.6);
+          it.wobble = Math.min(0.9, it.wobble + 0.35);
         }
         c.state = 'idle';
         c.stateTimer = 0.6;
       }
     } else {
       // idle wandering on floor
-      c.x += c.vx * (40 + difficulty*6) * dt;
-      // bounce edges
+      c.x += c.vx * (38 + difficulty*6) * dt;
       if (c.x < 48) { c.x = 48; c.vx = Math.abs(c.vx); }
       if (c.x > W - 48) { c.x = W - 48; c.vx = -Math.abs(c.vx); }
       if (Math.random() < 0.0015) c.vx *= -1;
     }
 
-    // Kermit throws cups when mischiefing
-    if (c.throws && c.state === 'mischief' && c.cooldown <= 0 && Math.random() < 0.03 * difficulty){
+    // Kermit throws glasses (projectiles) when mischiefing
+    if (c.throws && c.state === 'mischief' && c.cooldown <= 0 && Math.random() < 0.035 * difficulty){
       const live = items.filter(i=>!i.broken);
       if (live.length){
         const target = live[Math.floor(Math.random()*live.length)];
-        launchProjectile(c.x, c.y - 8, target.x, target.y);
-        c.cooldown = 2 + Math.random()*2;
+        throwGlass(c.x, c.y - 8, target.x, target.y);
+        c.cooldown = 2 + Math.random()*2.2;
         if (!muted) tossSound();
       }
     }
     c.cooldown -= dt;
   }
 
-  // items wobble decay; heavy wobble can break item
+  // items wobble decay and potential self-break if high wobble
   for (let it of items){
     if (it.broken) continue;
-    it.wobble = Math.max(0, it.wobble - dt * 0.85);
-    if (!it.protected && it.wobble > 1.05 && Math.random() < 0.025 * difficulty){
-      breakItem(it, null);
+    it.wobble = Math.max(0, it.wobble - dt * 0.9);
+    it.rot *= 0.98;
+    if (!it.protected && it.wobble > 1.05 && Math.random() < 0.028 * difficulty){
+      // break it from wobble alone
+      knockItem(it, null);
     }
   }
 
-  // projectiles update (parabolic)
+  // projectiles update (glasses follow parabolic trajectories)
   for (let p of projectiles){
-    p.vy += 500 * dt;
+    p.vy += 600 * dt;
     p.x += p.vx * dt;
     p.y += p.vy * dt;
     p.life -= dt;
-    // collide with items
+    // collisions with items
     for (let it of items){
       if (it.broken) continue;
-      if (Math.hypot(p.x - it.x, p.y - it.y) < 30){
-        breakItem(it, 'cup');
+      if (Math.hypot(p.x - it.x, p.y - it.y) < 28){
+        knockItem(it, 'glass');
         p.life = -1;
         if (!muted) smashSound();
       }
     }
+    // hit floor: small bounce then disappear
+    if (p.y > H - 130 && p.life > 0){
+      p.vy *= -0.3;
+      p.vx *= 0.6;
+      p.life -= 0.25;
+      if (p.life <= 0 && !muted) smashSound();
+    }
   }
-  projectiles = projectiles.filter(p => p.life > 0 && p.x > -100 && p.x < W + 100 && p.y < H + 200);
+  projectiles = projectiles.filter(p => p.life > 0 && p.x > -120 && p.x < W + 120 && p.y < H + 200);
 
-  // small random mischief spawns
+  // random extra mischief triggers
   if (Math.random() < 0.0012 * difficulty){
     const c = cats[Math.floor(Math.random()*cats.length)];
     c.state = 'mischief';
@@ -246,235 +300,361 @@ function update(dt){
   }
 }
 
-// Launch a cup projectile from (sx,sy) toward (tx,ty)
-function launchProjectile(sx, sy, tx, ty){
-  const angle = Math.atan2(ty - sy, tx - sx);
-  const speed = 200 + Math.random()*60;
-  projectiles.push({
-    x: sx, y: sy,
-    vx: Math.cos(angle) * speed,
-    vy: Math.sin(angle) * speed - 120,
-    life: 3
-  });
-}
-
-// Break item: reduce life, penalize score
-function breakItem(it, source){
-  if (it.broken) return;
-  it.broken = true;
-  it.protected = false;
-  it.wobble = 0;
-  score = Math.max(0, score - 4);
+// When a cat (or projectile) knocks an item
+function knockItem(item, source){
+  if (item.broken) return;
+  item.broken = true;
+  item.protected = false;
+  item.wobble = 0;
+  item.rot = (Math.random()-0.5)*0.6;
+  score = Math.max(0, score - 5);
   lives -= 1;
   updateHUD();
   if (!muted) smashSound();
-  // nearby items get wobble bumped
+  // bump neighbors' wobble
   for (let o of items){
-    if (o !== it && !o.broken && Math.hypot(o.x - it.x, o.y - it.y) < 160){
-      o.wobble = Math.min(1.3, o.wobble + 0.6);
+    if (o !== item && !o.broken && Math.hypot(o.x - item.x, o.y - item.y) < 160){
+      o.wobble = Math.min(1.4, o.wobble + 0.7);
+      o.rot += (Math.random()-0.5)*0.12;
     }
   }
   if (lives <= 0){
     running = false;
-  } else {
-    // small shake effect could be added; keep simple
   }
 }
 
-// Drawing helpers: nicer cat shapes and items
+// Launch glass projectile (thrown by Kermit)
+function throwGlass(sx, sy, tx, ty){
+  const angle = Math.atan2(ty - sy, tx - sx);
+  const speed = 240 + Math.random()*80;
+  projectiles.push({
+    x: sx, y: sy,
+    vx: Math.cos(angle) * speed,
+    vy: Math.sin(angle) * speed - 120,
+    life: 2.2, color: COLORS.glass
+  });
+}
+
+// Drawing: refined visuals with gradients, shadows, highlights
 function draw(){
   ctx.clearRect(0,0,W,H);
-  // room background: wall and floor
-  ctx.fillStyle = '#f7f6f4';
-  ctx.fillRect(0,0,W,H);
-  // wall baseboard
-  ctx.fillStyle = '#efe7dd';
-  ctx.fillRect(0,0,W, H - 140);
-  // floor area
-  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--floor') || '#d9cdbf';
-  ctx.fillRect(0,H-140,W,140);
-  // simple table tops
-  ctx.fillStyle = '#bfae98';
-  ctx.fillRect(120,90,220,10);
-  ctx.fillRect(520,90,220,10);
-  ctx.fillRect(260,200,200,10);
-  ctx.fillRect(680,200,160,10);
+  // wallpaper + floor
+  drawRoom();
 
-  // draw items
+  // tables and surfaces
+  drawTables();
+
+  // items
   for (let it of items){
     ctx.save();
-    const wob = Math.sin(time*8 + it.id*2) * it.wobble * 4;
+    // wobble visual (small vertical offset and rotation)
+    const wob = Math.sin(time*9 + it.id*2.2) * it.wobble * 6;
     ctx.translate(it.x, it.y + wob);
+    ctx.rotate(it.rot);
     if (it.broken){
-      // shards
-      ctx.globalAlpha = 0.95;
-      ctx.fillStyle = '#b5b5b5';
-      for (let s=0;s<6;s++){
-        ctx.beginPath();
-        ctx.moveTo(-6 + s*4, 6 + s*2);
-        ctx.lineTo(-12 + s*6, 10 + s*1.5);
-        ctx.lineTo(-8 + s*5, 14 + s*0.5);
-        ctx.closePath();
-        ctx.fill();
-      }
-      ctx.globalAlpha = 1;
+      drawBrokenItem(it);
     } else {
-      // draw based on type
-      if (it.type === 'lamp'){
-        ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--lamp').trim() || '#f3d08a';
-        // shade
-        ctx.beginPath();
-        ctx.ellipse(0,-16,18,12,0,0,Math.PI*2);
-        ctx.fill();
-        ctx.fillStyle = '#c99f5d';
-        ctx.fillRect(-4,-6,8,18);
-      } else if (it.type === 'vase'){
-        ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--vase').trim() || '#7fb7c9';
-        ctx.beginPath();
-        ctx.ellipse(0,0,14,18,0,0,Math.PI*2);
-        ctx.fill();
-      } else { // glass
-        ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--glass').trim() || '#bfe6ff';
-        ctx.fillRect(-10,-10,20,22);
-        ctx.fillStyle = 'rgba(255,255,255,0.4)';
-        ctx.fillRect(-6,-8,12,6);
-      }
+      drawItem(it);
     }
-    // protection highlight
     if (it.protected && !it.broken){
-      ctx.strokeStyle = '#ffd54d';
+      // highlight outline
+      ctx.strokeStyle = 'rgba(255,213,79,0.9)';
       ctx.lineWidth = 3;
-      ctx.strokeRect(-26,-26,52,52);
+      roundRect(ctx, -30, -30, 60, 60, 8, true);
     }
     ctx.restore();
   }
 
-  // draw cats with rounded stylized sprites
+  // cats (more detailed)
   for (let c of cats){
-    // shadow
-    ctx.beginPath();
-    ctx.fillStyle = 'rgba(0,0,0,0.12)';
-    ctx.ellipse(c.x, c.y+30, c.radius+10, 10, 0, 0, Math.PI*2);
-    ctx.fill();
-
-    // body
-    ctx.save();
-    ctx.translate(c.x, c.y);
-    ctx.rotate(Math.sin(time*2 + c.id)*0.05);
-    // torso
-    roundedEllipse(ctx, 0, 6, c.radius+8, c.radius+12, c.color);
-    // head
-    roundedEllipse(ctx, (c.vx>0?8:-8), -12, c.radius-2, c.radius-2, shade(c.color, -12));
-    // ears
-    drawEar(ctx, -12 + (c.vx>0?4:-4), -20, c.color);
-    drawEar(ctx, 12 + (c.vx>0?4:-4), -20, c.color);
-    // eyes
-    ctx.fillStyle = c.color === '#ffffff' || c.color === 'white' ? '#222' : '#fff';
-    ctx.fillRect(-8 + (c.vx>0?1:-1), -14, 6, 6);
-    ctx.fillRect(4 + (c.vx>0?1:-1), -14, 6, 6);
-    // nose
-    ctx.fillStyle = '#e08b8b';
-    ctx.beginPath();
-    ctx.moveTo(0,-6); ctx.lineTo(-4,-2); ctx.lineTo(4,-2); ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-
-    // name label
-    ctx.fillStyle = '#333';
-    ctx.font = '13px system-ui';
-    ctx.textAlign = 'center';
-    ctx.fillText(c.name, c.x, c.y + 48);
+    drawCat(c);
   }
 
-  // draw projectiles (cups)
+  // projectiles (glasses)
   for (let p of projectiles){
-    ctx.save();
-    ctx.translate(p.x, p.y);
-    ctx.rotate(Math.atan2(p.vy, p.vx));
-    ctx.fillStyle = '#6b6b6b';
-    ctx.fillRect(-10,-6,20,12);
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(-6,-4,12,6);
-    ctx.restore();
+    drawGlassProjectile(p);
   }
 
-  // overlay when game over
+  // overlay when game over or win
   if (!running){
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillStyle = 'rgba(8,12,18,0.56)';
     ctx.fillRect(0,0,W,H);
     ctx.fillStyle = '#fff';
     ctx.textAlign = 'center';
-    ctx.font = '32px system-ui';
+    ctx.font = '36px system-ui';
     ctx.fillText('Game Over', W/2, H/2 - 8);
     ctx.font = '16px system-ui';
-    ctx.fillText('You lost all lives — press Restart to play again', W/2, H/2 + 22);
+    ctx.fillText('Press Restart to play again', W/2, H/2 + 22);
   } else {
-    // win condition: if no items broken and time exceeds threshold, player wins
-    if (items.every(i => !i.broken) && time > 35){
+    // win condition: survive a time threshold with no broken items
+    if (items.every(i => !i.broken) && time > 45){
       running = false;
-      ctx.fillStyle = 'rgba(255,255,255,0.9)';
-      ctx.fillRect(W/2 - 220, H/2 - 70, 440, 140);
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      roundRect(ctx, W/2 - 260, H/2 - 80, 520, 160, 10, true);
       ctx.fillStyle = '#1b3b4b';
-      ctx.font = '26px system-ui';
       ctx.textAlign = 'center';
-      ctx.fillText('Well done! You kept everything safe!', W/2, H/2 - 6);
+      ctx.font = '26px system-ui';
+      ctx.fillText('Great job — everything is safe!', W/2, H/2 - 8);
       ctx.font = '14px system-ui';
       ctx.fillText('Press Restart to play again', W/2, H/2 + 22);
     }
   }
 }
 
-// small drawing helpers
-function roundedEllipse(ctx,x,y,rx,ry,color){
-  ctx.beginPath();
-  ctx.ellipse(x,y,rx,ry,0,0,Math.PI*2);
-  ctx.fillStyle = color;
-  ctx.fill();
-}
-function drawEar(ctx,x,y,color){
-  ctx.beginPath();
-  ctx.moveTo(x,y);
-  ctx.lineTo(x+8,y-8);
-  ctx.lineTo(x+14,y+2);
-  ctx.closePath();
-  ctx.fillStyle = color;
-  ctx.fill();
-}
-function shade(col, perc){
-  // simple name mapping for our used colors
-  if (col.includes('ff9f') || col.includes('ffb7')) return '#d77a08';
-  if (col.includes('9aa0')) return '#7e8488';
-  if (col.includes('111') || col === '#111') return '#0b0b0b';
-  if (col.includes('fff') || col === '#ffffff') return '#dedede';
-  return col;
+/* Drawing helpers */
+
+// Room background with subtle gradients
+function drawRoom(){
+  // wall
+  const wallGrad = ctx.createLinearGradient(0,0,0,H-120);
+  wallGrad.addColorStop(0, '#fffaf6');
+  wallGrad.addColorStop(1, '#f1e9e0');
+  ctx.fillStyle = wallGrad;
+  ctx.fillRect(0,0,W,H);
+
+  // floor area
+  ctx.fillStyle = COLORS.accent;
+  ctx.globalAlpha = 0.03;
+  ctx.fillRect(0,H-140,W,140);
+  ctx.globalAlpha = 1;
+
+  // baseboard
+  ctx.fillStyle = '#e8ded3';
+  ctx.fillRect(0,H-140,W,12);
 }
 
-// Sound (simple beeps)
+// Simple tables with depth
+function drawTables(){
+  ctx.fillStyle = '#cbb79f';
+  // left table
+  roundRect(ctx, 120, 90, 240, 14, 6, true);
+  // right table
+  roundRect(ctx, 520, 90, 240, 14, 6, true);
+  // lower tables
+  roundRect(ctx, 260, 200, 220, 14, 6, true);
+  roundRect(ctx, 680, 200, 160, 14, 6, true);
+}
+
+// draw a specific item by type
+function drawItem(it){
+  if (it.type === 'lamp'){
+    // lamp base
+    const grad = ctx.createLinearGradient(0,-28,0,12);
+    grad.addColorStop(0, '#fff7ec');
+    grad.addColorStop(1, COLORS.lamp);
+    ctx.fillStyle = grad;
+    // shade the shade
+    ctx.beginPath();
+    ctx.ellipse(0,-18,26,18,0,0,Math.PI*2);
+    ctx.fill();
+    // stand
+    ctx.fillStyle = '#c9a96f';
+    ctx.fillRect(-4,-6,8,22);
+    // base
+    ctx.beginPath();
+    ctx.ellipse(0,18,16,6,0,0,Math.PI*2);
+    ctx.fill();
+  } else if (it.type === 'vase'){
+    // glossy vase
+    const g = ctx.createLinearGradient(0,-18,0,14);
+    g.addColorStop(0, '#dff7fb');
+    g.addColorStop(1, COLORS.vase);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(0,-20);
+    ctx.bezierCurveTo(14,-20,20,-6,10,6);
+    ctx.bezierCurveTo(18,16,8,26,0,26);
+    ctx.bezierCurveTo(-8,26,-18,16,-10,6);
+    ctx.bezierCurveTo(-20,-6,-14,-20,0,-20);
+    ctx.fill();
+    // highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.beginPath();
+    ctx.ellipse(-6,-6,6,12, -0.6, 0, Math.PI*2);
+    ctx.fill();
+  } else if (it.type === 'glass' || it.type === 'cup'){
+    // glass/cup
+    ctx.fillStyle = (it.type === 'glass') ? COLORS.glass : COLORS.cup;
+    ctx.fillRect(-12,-12,24,26);
+    // rim highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillRect(-8,-10,16,6);
+  }
+}
+
+// draw broken shards
+function drawBrokenItem(it){
+  ctx.fillStyle = '#bdbdbd';
+  for (let s=0; s<6; s++){
+    ctx.beginPath();
+    ctx.moveTo((s-2.5)*6, 4 + s*1.6);
+    ctx.lineTo((s-3.5)*10, 12 + s*0.6);
+    ctx.lineTo((s-1.5)*8, 16 + s*0.3);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+// draw cat with more detailed shapes
+function drawCat(c){
+  ctx.save();
+  ctx.translate(c.x, c.y);
+  // slight bobbing based on time and state
+  const bob = Math.sin(time*2 + c.id) * 2;
+  ctx.translate(0, bob);
+
+  // shadow
+  ctx.beginPath();
+  ctx.fillStyle = 'rgba(0,0,0,0.12)';
+  ctx.ellipse(0, 34, c.radius + 16, 10, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // body gradient
+  const bodyGrad = ctx.createLinearGradient(-20, -6, 20, 24);
+  bodyGrad.addColorStop(0, shadeColor(c.color, 12));
+  bodyGrad.addColorStop(1, shadeColor(c.color, -6));
+  ctx.fillStyle = bodyGrad;
+  // torso
+  roundRect(ctx, -26, -6, 52, 40, 22, true);
+
+  // head
+  ctx.save();
+  ctx.translate((c.vx>0 ? 8 : -8), -24);
+  const headCol = shadeColor(c.color, -8);
+  const headGrad = ctx.createLinearGradient(-18, -18, 18, 18);
+  headGrad.addColorStop(0, headCol);
+  headGrad.addColorStop(1, shadeColor(headCol, -18));
+  ctx.fillStyle = headGrad;
+  roundRect(ctx, -20, -18, 40, 34, 12, true);
+
+  // ears
+  drawTriangle(ctx, -12, -24, -6, -34, 0, -22, c.color);
+  drawTriangle(ctx, 12, -24, 6, -34, 0, -22, c.color);
+
+  // eyes (contrast depending on coat)
+  const eyeColor = (isLightColor(c.color) ? '#222' : '#fff');
+  ctx.fillStyle = eyeColor;
+  ctx.beginPath();
+  ctx.ellipse(-6, -6, 5, 6, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(6, -6, 5, 6, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // pupils
+  ctx.fillStyle = (eyeColor === '#fff') ? '#000' : '#111';
+  ctx.fillRect(-4, -4, 3, 4);
+  ctx.fillRect(8-6, -4, 3, 4);
+
+  // nose
+  ctx.fillStyle = '#e08b8b';
+  ctx.beginPath();
+  ctx.moveTo(0,-2); ctx.lineTo(-4,2); ctx.lineTo(4,2); ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  // tail (simple curved)
+  ctx.beginPath();
+  ctx.strokeStyle = shadeColor(c.color, -12);
+  ctx.lineWidth = 8;
+  ctx.lineCap = 'round';
+  ctx.moveTo(20, 0);
+  ctx.quadraticCurveTo(46, -10, 60, 6);
+  ctx.stroke();
+
+  // name tag
+  ctx.fillStyle = '#333';
+  ctx.font = '12px system-ui';
+  ctx.textAlign = 'center';
+  ctx.fillText(c.name, 0, 52);
+  ctx.restore();
+}
+
+// Draw a thrown glass projectile
+function drawGlassProjectile(p){
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  const angle = Math.atan2(p.vy, p.vx);
+  ctx.rotate(angle);
+  // cup/glass body
+  ctx.fillStyle = COLORS.glass;
+  ctx.fillRect(-10, -6, 20, 12);
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.fillRect(-6, -4, 12, 6);
+  // rim
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.lineWidth = 1.2;
+  ctx.strokeRect(-10, -6, 20, 12);
+  ctx.restore();
+}
+
+/* Misc draw utilities */
+function roundRect(ctx, x, y, w, h, r, fill){
+  const k = Math.min(r, Math.abs(w/2), Math.abs(h/2));
+  ctx.beginPath();
+  ctx.moveTo(x + k, y);
+  ctx.arcTo(x + w, y, x + w, y + h, k);
+  ctx.arcTo(x + w, y + h, x, y + h, k);
+  ctx.arcTo(x, y + h, x, y, k);
+  ctx.arcTo(x, y, x + w, y, k);
+  ctx.closePath();
+  if (fill) ctx.fill(); else ctx.stroke();
+}
+function drawTriangle(ctx, x1,y1,x2,y2,x3,y3, color){
+  ctx.beginPath();
+  ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.lineTo(x3,y3); ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+// quick color helpers
+function shadeColor(hex, percent){
+  // accepts hex or named values used above — naive implementation for our limited palette
+  // convert simple hex like #rrggbb
+  try {
+    if (hex[0] !== '#') return hex;
+    const num = parseInt(hex.slice(1),16);
+    const r = Math.min(255, Math.max(0, ((num >> 16) & 0xFF) + percent));
+    const g = Math.min(255, Math.max(0, ((num >> 8) & 0xFF) + percent));
+    const b = Math.min(255, Math.max(0, (num & 0xFF) + percent));
+    return '#' + ((1<<24) + (r<<16) + (g<<8) + b).toString(16).slice(1);
+  } catch(e){ return hex; }
+}
+function isLightColor(hex){
+  try {
+    if (hex[0] !== '#') return false;
+    const num = parseInt(hex.slice(1),16);
+    const r = (num>>16)&0xff, g=(num>>8)&0xff, b=num&0xff;
+    // perceived luminance
+    const lum = 0.2126*r + 0.7152*g + 0.0722*b;
+    return lum > 160;
+  } catch(e){ return false; }
+}
+
+/* Sound (minimal beeps) */
 let audioCtx = null;
 function ensureAudio(){ if (muted) return null; if (!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)(); return audioCtx; }
-function beeper(freq,dur,vol=0.06){ const ac = ensureAudio(); if(!ac) return; const o = ac.createOscillator(); const g = ac.createGain(); o.type='sine'; o.frequency.value = freq; g.gain.value = vol; o.connect(g); g.connect(ac.destination); o.start(); o.stop(ac.currentTime + dur); }
-function meowSound(){ beeper(560,0.08,0.06); beeper(440,0.06,0.04); }
-function clickSound(){ beeper(1100,0.04,0.03); }
-function tossSound(){ beeper(760,0.06,0.04); }
-function smashSound(){ beeper(160,0.12,0.14); }
+function tone(freq,dur,vol=0.06){ const ac = ensureAudio(); if(!ac) return; const o = ac.createOscillator(); const g = ac.createGain(); o.type='sine'; o.frequency.value=freq; g.gain.value=vol; o.connect(g); g.connect(ac.destination); o.start(); o.stop(ac.currentTime+dur); }
+function meowSound(){ tone(560,0.08,0.07); tone(420,0.06,0.05); }
+function clickSound(){ tone(1100,0.04,0.03); }
+function tossSound(){ tone(760,0.06,0.04); }
+function smashSound(){ tone(160,0.12,0.14); }
 
-// Buttons
-restartBtn.addEventListener('click', ()=>{ reset(); });
-muteBtn.addEventListener('click', ()=>{ muted = !muted; muteBtn.textContent = muted ? 'Unmute' : 'Mute'; });
+// HUD update
+function updateHUD(){ scoreEl.textContent = score; livesEl.textContent = lives; }
 
-// Initialize and run
-reset();
+// Controls
+restartBtn.addEventListener('click', ()=> init());
+muteBtn.addEventListener('click', ()=> { muted = !muted; muteBtn.textContent = muted ? 'Unmute' : 'Mute'; });
+
+// initialize and start
+init();
 requestAnimationFrame(loop);
 
-// keep canvas size consistent on high-dpi displays
-(function hdpi(){
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = W * dpr;
-  canvas.height = H * dpr;
-  canvas.style.width = W + 'px';
-  canvas.style.height = H + 'px';
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-})();
+// keep canvas responsive to DPI changes if needed
+window.addEventListener('resize', ()=> {
+  // no change to canvas CSS size; if you want to re-layout, you can update here.
+});
 </script>
 </body>
 </html>
