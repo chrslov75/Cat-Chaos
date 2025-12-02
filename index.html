@@ -8,100 +8,37 @@
 <style>
   body,html{margin:0;height:100%;overflow:hidden;background:#ffe4e1;font-family:system-ui}
   canvas{display:block;width:100%;height:100%;background:#f5f5dc}
-  #msg{position:fixed;top:10px;left:50%;transform:translateX(-50%);color:#333;font-weight:bold;text-align:center;z-index:10;pointer-events:none}
+  #msg{position:fixed;top:10px;left:50%;transform:translateX(-50%);color:#333;font:bold 18px system-ui;text-align:center;z-index:10;pointer-events:none;background:rgba(255,255,255,0.7);padding:8px 16px;border-radius:12px}
 </style>
 </head>
 <body>
 <div id="msg">Tap cats to scare them!<br>Kermit throws glasses!</div>
 <canvas id="cv"></canvas>
 <script>
-const canvas = document.getElementById('cv');
-const ctx = canvas.getContext('2d');
-let w = canvas.width = window.innerWidth;
-let h = canvas.height = window.innerHeight;
-window.addEventListener('resize',()=>{w=canvas.width=window.innerWidth;h=canvas.height=window.innerHeight});
+const canvas=document.getElementById('cv'),ctx=canvas.getContext('2d');
+let w=canvas.width=window.innerWidth,h=canvas.height=window.innerHeight;
+window.addEventListener('resize',()=>{w=canvas.width=innerWidth;h=canvas.height=innerHeight});
 
-let score = 0, highScore = localStorage.getItem('hs')||0, lives = 5, gameOver = false;
-let items = [], cats = [], glasses = [];
+let score=0,high=localStorage.hs||0,lives=5,gameOver=false;
+let items=[],cats=[],glasses=[];
 
-const catTypes = ['oscar','nibbles','dusty','chester','kermit'];
+// Real emojis
 const catEmoji = {oscar:'Cat1',nibbles:'Cat2',dusty:'Cat3',chester:'Cat4',kermit:'Cat5'};
+const itemEmoji = {g:'Glass',l:'Lamp'};
 
-function initItems(){items=[];lives=5;for(let i=0;i<5;i++)items.push({x:w*0.7+30+i*50,y:h*0.65-40,type:Math.random()>0.5?'g':'l'})}
+function initItems(){items=[];lives=5;for(let i=0;i<5;i++)items.push({x:w*0.7+40+i*60,y:h*0.65-50,type:Math.random()>0.5?'g':'l'})}
 function spawnCat(){
-  const type = catTypes[Math.floor(Math.random()*5)];
-  const isKermit = type==='kermit';
-  const vx = (1.8 + Math.random()*0.8 + (isKermit?1.8:0)) * (w/800);
-  const y = [h*0.38, h*0.48, h*0.58, h*0.68][Math.floor(Math.random()*4)];
-  cats.push({x:-100,y,vx,type,scared:false,throwTimer:isKermit?Math.random()*60:0});
+  const type=['oscar','nibbles','dusty','chester','kermit'][Math.floor(Math.random()*5)];
+  const kermit=type==='kermit';
+  const vx=(1.8+Math.random()*0.8+(kermit?1.8:0))*(w/800);
+  const y=[h*0.38,h*0.48,h*0.58,h*0.68][Math.floor(Math.random()*4)];
+  cats.push({x:-120,y,vx,type,scared:false,throwTimer:kermit?Math.random()*60:0});
 }
-function playSound(freq=800,type='sine'){
-  const a=new AudioContext(),o=a.createOscillator(),g=a.createGain();
-  o.type=type;o.frequency.value=freq;g.gain.setValueAtTime(0.3,a.currentTime);g.gain.exponentialRampToValueAtTime(0.01,a.currentTime+0.2);
-  o.connect(g);g.connect(a.destination);o.start();o.stop(a.currentTime+0.2);
-}
-function loseLife(){
-  if(lives-->0 && items.length)items.splice(Math.floor(Math.random()*items.length),1);
-  playSound(100,'sawtooth');
-  if(lives<=0){gameOver=true;localStorage.setItem('hs',Math.max(score,highScore))}
-}
-canvas.addEventListener('touchstart',e=>{e.preventDefault();handleTap(e)},{passive:false});
-canvas.addEventListener('click',handleTap);
-function handleTap(e){
-  if(gameOver){score=0;lives=5;cats=[];glasses=[];items=[];gameOver=false;initItems();spawnCat();return}
-  const rect=canvas.getBoundingClientRect();
-  const x = (e.touches?e.touches[0].clientX:e.clientX) - rect.left;
-  const y = (e.touches?e.touches[0].clientY:e.clientY) - rect.top;
-  for(let cat of cats){
-    if(!cat.scared && Math.hypot(x-cat.x,y-cat.y)<80){
-      cat.scared=true;cat.vx=-8;score+=10;playSound(900);return;
-    }
-  }
-}
-function loop(){
-  ctx.clearRect(0,0,w,h);
-  // background
-  ctx.fillStyle='#E0D7C0';ctx.fillRect(0,0,w,h*0.4);
-  ctx.fillStyle='#8B4513';ctx.fillRect(0,h*0.85,w,h*0.15);
-  ctx.fillStyle='#D2691E';ctx.fillRect(w*0.65,h*0.65,w*0.25,h*0.08);
-  // items
-  items.forEach(it=>{ctx.font='60px Arial';ctx.textAlign='center';ctx.fillText(it.type==='g'?'Glass':'Lamp',it.x,it.y)});
-  // cats
-  cats = cats.filter(cat=>{
-    cat.x += cat.vx;
-    if(cat.scared && cat.x < -100) return false;
-    if(!cat.scared && cat.type==='kermit'){
-      cat.throwTimer++; if(cat.throwTimer>70){glasses.push({x:cat.x+40,y:cat.y+10,vx:cat.vx+4});cat.throwTimer=0;playSound(200,'triangle')}
-    }
-    if(cat.x > w*0.7 && !cat.scared){loseLife();return false}
-    ctx.save();ctx.translate(cat.x,cat.y);
-    ctx.scale(cat.scared?-1.8:1.8,1.8);ctx.font='80px Arial';
-    ctx.fillText(catEmoji[cat.type],0,0);ctx.restore();
-    return true;
-  });
-  // thrown glasses
-  glasses = glasses.filter(g=>{
-    g.x += g.vx;
-    if(g.x > w*0.7){loseLife();return false}
-    ctx.font='60px Arial';ctx.fillText('Glass',g.x,g.y);return true;
-  });
-  // spawn new cat
-  if(Math.random()<0.02) spawnCat();
-  // UI
-  ctx.fillStyle='#FFF';ctx.font='bold 48px Arial';ctx.textAlign='left';
-  ctx.fillText('Score: '+score,20,60);
-  ctx.textAlign='center';ctx.fillText('High: '+highScore,w/2,60);
-  for(let i=0;i<lives;i++)ctx.fillText('Heart',w*0.7+30+i*60,60);
-  if(gameOver){
-    ctx.fillStyle='rgba(0,0,0,0.8)';ctx.fillRect(0,0,w,h);
-    ctx.fillStyle='#FFF';ctx.textAlign='center';ctx.font='bold 72px Arial';
-    ctx.fillText('Game Over!',w/2,h/2);
-    ctx.font='bold 48px Arial';ctx.fillText('Score: '+score,w/2,h/2+80);
-    ctx.fillText('Tap to play again',w/2,h/2+160);
-  }
-  requestAnimationFrame(loop);
-}
-initItems();spawnCat();loop();
-</script>
-</body>
-</html>
+function sound(f=800,t='sine'){const a=new AudioContext(),o=a.createOscillator(),g=a.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(0.4,a.currentTime);g.gain.exponentialRampToValueAtTime(0.01,a.currentTime+0.25);o.connect(g);g.connect(a.destination);o.start();o.stop(a.currentTime+0.25)}
+function loseLife(){if(lives-->0&&items.length)items.splice(Math.floor(Math.random()*items.length),1);sound(100,'sawtooth');if(lives<=0){gameOver=true;high=Math.max(score,high);localStorage.hs=high}}
+
+canvas.addEventListener('touchstart',e=>e.preventDefault()||tap(e),{passive:false});
+canvas.addEventListener('click',tap);
+function tap(e){
+  if(gameOver){score=0;lives=5;items=[];cats=[];glasses=[];gameOver=false;initItems();spawnCat();return}
+  const x=e.touches?e.touches[0].clientX:e.clientX
