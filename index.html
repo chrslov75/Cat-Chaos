@@ -3,73 +3,73 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Stop the Cats! — Improved</title>
+<title>Stop the Cats! — Sprites, Particles & Tuning</title>
 <style>
   :root{
-    --bg:#f3f2ef; --wall:#efe9e2; --floor:#ded1c3; --accent:#3e6b85;
+    --bg:#f6f5f2; --panel:#fff; --accent:#2f6575;
     --nibbles:#ff8a2b; --dusty:#ffbe6b; --chester:#9aa0a6; --kermit:#111111; --oscar:#ffffff;
     --lamp:#f3d08a; --vase:#6fb3c6; --glass:#bfe6ff; --cup:#e8d7c4;
   }
   *{box-sizing:border-box}
-  html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;background:var(--bg);display:flex;align-items:center;justify-content:center;color:#2b3a3f}
-  .wrap{width:980px;max-width:96vw;padding:18px;display:flex;flex-direction:column;gap:12px;align-items:center}
-  canvas{border-radius:12px;box-shadow:0 18px 50px rgba(20,30,40,0.12);display:block;background:linear-gradient(#fff 0 55%, #efe9df 55%)}
-  .hud{width:100%;display:flex;justify-content:space-between;align-items:center;font-weight:700}
-  .controls{display:flex;gap:8px;align-items:center}
-  button{padding:8px 12px;border-radius:8px;border:0;background:var(--accent);color:#fff;cursor:pointer}
+  html,body{height:100%;margin:0;background:linear-gradient(#f7f6f3 0%, #efeae4 100%);font-family:Inter,system-ui,Segoe UI,Roboto,Arial;color:#2b3a3f;display:flex;align-items:center;justify-content:center}
+  .wrap{width:1024px;max-width:96vw;padding:18px;background:var(--panel);border-radius:12px;box-shadow:0 18px 60px rgba(20,30,40,0.12);display:flex;flex-direction:column;gap:14px}
+  .top{display:flex;justify-content:space-between;align-items:center}
+  .title{font-weight:700;font-size:18px}
+  .hud{display:flex;gap:16px;align-items:center;font-weight:700}
+  button{background:var(--accent);color:#fff;border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
+  small{color:#4a5960}
+  canvas{border-radius:10px;background:linear-gradient(#fff 0 60%, #efe9df 60%);display:block;width:100%;height:560px}
   .legend{display:flex;gap:12px;align-items:center;font-size:13px;color:#445}
-  .dot{width:14px;height:14px;border-radius:50%;display:inline-block;margin-right:6px;border:1px solid rgba(0,0,0,0.06)}
-  small{opacity:.8}
+  .dot{width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:6px;border:1px solid rgba(0,0,0,0.06)}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="hud">
-    <div>Lives: <span id="lives">3</span> • Score: <span id="score">0</span></div>
-    <div class="legend">
-      <div><span class="dot" style="background:var(--nibbles)"></span>Nibbles</div>
-      <div><span class="dot" style="background:var(--dusty)"></span>Dusty</div>
-      <div><span class="dot" style="background:var(--chester)"></span>Chester</div>
-      <div><span class="dot" style="background:var(--kermit)"></span>Kermit</div>
-      <div><span class="dot" style="background:var(--oscar)"></span>Oscar</div>
+<div class="wrap" role="application" aria-label="Stop the Cats game">
+  <div class="top">
+    <div>
+      <div class="title">Stop the Cats! (Sprites + Particles + Tuning)</div>
+      <div style="font-size:13px;color:#55686f">Click cats to shoo them before they reach an item. Secure items by clicking them.</div>
     </div>
-    <div class="controls">
-      <small>Click cats to shoo • Click items to secure</small>
+    <div class="hud">
+      <div>Lives: <span id="lives">3</span></div>
+      <div>Score: <span id="score">0</span></div>
       <button id="restart">Restart</button>
       <button id="mute">Mute</button>
     </div>
   </div>
 
-  <canvas id="game" width="980" height="560" aria-label="Stop the Cats game"></canvas>
+  <canvas id="game" width="1000" height="560" aria-label="Stop the Cats game canvas"></canvas>
+
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <div class="legend">
+      <div><span class="dot" style="background:var(--nibbles)"></span>Nibbles</div>
+      <div><span class="dot" style="background:var(--dusty)"></span>Dusty</div>
+      <div><span class="dot" style="background:var(--chester)"></span>Chester</div>
+      <div><span class="dot" style="background:var(--kermit)"></span>Kermit (throws glasses)</div>
+      <div><span class="dot" style="background:var(--oscar)"></span>Oscar</div>
+    </div>
+    <small>Goal: Keep items from breaking. Survive 60s. Improved scoring/difficulty.</small>
+  </div>
 </div>
 
 <script>
 /*
-  Enhanced "Stop the Cats!" single-file game
-  - More detailed canvas graphics (shading, gradients, highlights).
-  - Fixed click detection (accounts for high-DPI scaling).
-  - Kermit throws glasses (glass projectiles). Other cats attempt to knock lamps, vases, cups.
-  - Click an item to secure it briefly. Click a cat to shoo it away.
-  - Improved behaviors and clearer feedback.
+  Single-file enhanced version:
+  - Sprite-based cats (generated on-the-fly on offscreen canvases, 4-frame walk + idle)
+  - Particle system for item break (shards + dust)
+  - Difficulty & scoring tuned: shooing gives points, securing gives points, breaks cost lives & score
+  - Clearer spawn/target behaviors: cats enter from doors & move to items
 */
 
+/* ---------- Setup ---------- */
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d', { alpha: false });
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
 const scoreEl = document.getElementById('score');
 const livesEl = document.getElementById('lives');
 const restartBtn = document.getElementById('restart');
 const muteBtn = document.getElementById('mute');
 
-let W = 980, H = 560;
-let dpr = Math.max(1, window.devicePixelRatio || 1);
-let scale = dpr;
-canvas.style.width = W + 'px';
-canvas.style.height = H + 'px';
-canvas.width = Math.floor(W * dpr);
-canvas.height = Math.floor(H * dpr);
-ctx.setTransform(dpr,0,0,dpr,0,0);
-
-// Colors from CSS variables
 const CSS = getComputedStyle(document.documentElement);
 const COLORS = {
   nibbles: CSS.getPropertyValue('--nibbles').trim() || '#ff8a2b',
@@ -81,15 +81,16 @@ const COLORS = {
   vase:    CSS.getPropertyValue('--vase').trim()    || '#6fb3c6',
   glass:   CSS.getPropertyValue('--glass').trim()   || '#bfe6ff',
   cup:     CSS.getPropertyValue('--cup').trim()     || '#e8d7c4',
-  accent:  CSS.getPropertyValue('--accent').trim()  || '#3e6b85'
+  accent:  CSS.getPropertyValue('--accent').trim()  || '#2f6575'
 };
 
-// Entities
-let cats = [], items = [], projectiles = [];
+/* ---------- Game state ---------- */
+let cats = [], items = [], projectiles = [], particles = [];
 let time = 0, running = true, muted = false;
-let score = 0, lives = 3, difficulty = 1;
+let score = 0, lives = 3, spawnTimer = 0;
+const surviveTarget = 60;
 
-// Cat setup: Nibbles, Dusty, Chester, Kermit (throws glasses), Oscar
+/* Cat types (Mango removed, Oscar added) */
 const CAT_TYPES = [
   {name:'Nibbles', color:COLORS.nibbles},
   {name:'Dusty',  color:COLORS.dusty},
@@ -98,93 +99,361 @@ const CAT_TYPES = [
   {name:'Oscar',  color:COLORS.oscar}
 ];
 
-// Items layout (lamps, vases, cups/glasses)
+/* Doors */
+const DOORS = [{x:-80,y:H-130,dir:1},{x:W+80,y:H-130,dir:-1}];
+
+/* Items layout */
 const ITEM_LAYOUT = [
   {type:'lamp', x:220, y:140},
   {type:'vase', x:450, y:110},
-  {type:'glass', x:660, y:140},
-  {type:'cup', x:320, y:230},
-  {type:'vase', x:760, y:230}
+  {type:'glass', x:670, y:140},
+  {type:'cup', x:320, y:240},
+  {type:'vase', x:760, y:240}
 ];
 
-function init(){
-  // reset stats
-  time = 0; running = true; score = 0; lives = 3; difficulty = 1;
-  projectiles = [];
+/* ---------- Sprite generation (offscreen canvases) ---------- */
+/* We'll procedurally draw simple "sprite frames" for each cat color/variant.
+   Each sprite sheet: 4 frames (idle/walk cycle). Size: 64x48 per frame. */
+const SPR_W = 64, SPR_H = 48, FRAMES = 4;
+const spriteAtlas = {}; // key by color name -> canvas
 
-  // create cats nicely spaced
-  cats = CAT_TYPES.map((t,i)=>{
-    const baseX = 80 + i*170 + (i%2 ? -10 : 10);
-    return {
-      id:i, name:t.name, color:t.color, x: baseX, y: H - 110 + (i%2?6:0),
-      vx: (Math.random()>0.5?1:-1) * (0.6 + Math.random()*0.8),
-      state:'idle', stateTimer:0, speed:0.9 + Math.random()*0.9, radius:26,
-      throws: !!t.throws, cooldown:1 + Math.random()*2
-    };
-  });
+function generateCatSprite(colorHex, name){
+  const off = document.createElement('canvas');
+  off.width = SPR_W * FRAMES;
+  off.height = SPR_H;
+  const g = off.getContext('2d');
 
-  // items (with fancy initial rotation/wobble)
-  items = ITEM_LAYOUT.map((p,i)=>({
-    id:i, type:p.type, x:p.x, y:p.y, w:40, h:40,
-    broken:false, wobble: Math.random()*0.12, rot: (Math.random()-0.5)*0.06, protected:false
-  }));
-
-  updateHUD();
-}
-
-// Convert pointer coordinates to canvas-space accounting for CSS scaling and DPR
-function getCanvasCoords(evt){
-  const rect = canvas.getBoundingClientRect();
-  const cssX = evt.clientX - rect.left;
-  const cssY = evt.clientY - rect.top;
-  // convert to internal canvas coordinates in CSS px (we use ctx transform to map DPR)
-  return { x: cssX, y: cssY };
-}
-
-// Click handling
-canvas.addEventListener('pointerdown', (e)=>{
-  if (!running) return;
-  const {x:mx, y:my} = getCanvasCoords(e);
-
-  // items first (secure)
-  for (let it of items){
-    if (it.broken) continue;
-    if (Math.hypot(mx - it.x, my - it.y) < 44){
-      it.protected = true;
-      it.wobble = 0;
-      score += 1;
-      if (!muted) clickSound();
-      setTimeout(()=> it.protected = false, 1600);
-      updateHUD();
-      return;
-    }
+  // color parsing helper
+  function fillWithColor(col){
+    g.fillStyle = col;
   }
 
-  // cats: shoo if clicked
-  for (let c of cats){
-    if (Math.hypot(mx - c.x, my - c.y) < 42){
-      shooCat(c, mx, my);
-      return;
+  for (let f=0; f<FRAMES; f++){
+    const ox = f * SPR_W;
+    // background transparent
+    g.save();
+    g.translate(ox,0);
+    // body shadow
+    g.fillStyle = 'rgba(0,0,0,0.12)';
+    g.beginPath(); g.ellipse(32,38,22,7,0,0,Math.PI*2); g.fill();
+
+    // body (ellipse)
+    const bodyColor = colorHex;
+    const grad = g.createLinearGradient(0,6,0,40);
+    grad.addColorStop(0, shade(colorHex, -6));
+    grad.addColorStop(1, shade(colorHex, -18));
+    g.fillStyle = grad;
+    g.beginPath(); g.ellipse(32,26,22,18,0,0,Math.PI*2); g.fill();
+
+    // head offset varies per frame for simple walk
+    const headOffsetX = (f%2===0)? -2 : 2;
+    const headOffsetY = (f%3===0)? -2 : 0;
+    // head
+    g.fillStyle = shade(colorHex, -8);
+    g.beginPath(); g.ellipse(32+headOffsetX,12+headOffsetY,12,11,0,0,Math.PI*2); g.fill();
+    // ears
+    g.fillStyle = colorHex;
+    drawTriangle(g, 24+headOffsetX,6+headOffsetY, 28+headOffsetX, -4+headOffsetY, 32+headOffsetX,6+headOffsetY, colorHex);
+    drawTriangle(g, 40+headOffsetX,6+headOffsetY, 36+headOffsetX, -4+headOffsetY, 32+headOffsetX,6+headOffsetY, colorHex);
+
+    // eyes (contrast)
+    const light = isLight(colorHex);
+    g.fillStyle = light ? '#222' : '#fff';
+    g.beginPath(); g.ellipse(28+headOffsetX,10+headOffsetY,3,4,0,0,Math.PI*2); g.fill();
+    g.beginPath(); g.ellipse(36+headOffsetX,10+headOffsetY,3,4,0,0,Math.PI*2); g.fill();
+    // nose
+    g.fillStyle = '#e08b8b';
+    g.beginPath(); g.moveTo(32+headOffsetX,14+headOffsetY); g.lineTo(30+headOffsetX,16+headOffsetY); g.lineTo(34+headOffsetX,16+headOffsetY); g.closePath(); g.fill();
+
+    // tail (different per frame)
+    g.strokeStyle = shade(colorHex, -14);
+    g.lineWidth = 5;
+    g.beginPath();
+    const tailX = (f%2===0) ? 52 : 56;
+    g.moveTo(tailX,24); g.quadraticCurveTo(72,20 + (f%3)*4, 72, 16 + (f%2)*6);
+    g.stroke();
+
+    g.restore();
+  }
+  return off;
+}
+
+/* ---------- Utility helpers ---------- */
+function shade(hex, amt){
+  try {
+    if (!hex || hex[0] !== '#') return hex;
+    const num = parseInt(hex.slice(1),16);
+    const r = Math.min(255, Math.max(0, ((num>>16)&0xFF) + amt));
+    const g = Math.min(255, Math.max(0, ((num>>8)&0xFF) + amt));
+    const b = Math.min(255, Math.max(0, (num&0xFF) + amt));
+    return '#' + ((1<<24) + (r<<16) + (g<<8) + b).toString(16).slice(1);
+  } catch(e){ return hex; }
+}
+function isLight(hex){
+  try {
+    if (!hex || hex[0] !== '#') return false;
+    const num = parseInt(hex.slice(1),16);
+    const r=(num>>16)&0xff,g=(num>>8)&0xff,b=num&0xff;
+    return (0.2126*r + 0.7152*g + 0.0722*b) > 160;
+  } catch(e){ return false; }
+}
+function drawTriangle(g,x1,y1,x2,y2,x3,y3,col){ g.fillStyle = col; g.beginPath(); g.moveTo(x1,y1); g.lineTo(x2,y2); g.lineTo(x3,y3); g.closePath(); g.fill(); }
+
+/* ---------- Particle system ---------- */
+function spawnBreakParticles(x,y, count=18, color='#cfcfcf'){
+  for (let i=0;i<count;i++){
+    particles.push({
+      x, y,
+      vx: (Math.random()-0.5) * 240,
+      vy: -Math.random()*240 - 60,
+      life: 0.7 + Math.random()*0.8,
+      size: 4 + Math.random()*6,
+      color,
+      type: (Math.random()<0.5?'shard':'dust'),
+      age:0
+    });
+  }
+}
+function updateParticles(dt){
+  for (let i=particles.length-1;i>=0;i--){
+    const p = particles[i];
+    p.age += dt;
+    p.vy += 900 * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    if (p.age >= p.life) particles.splice(i,1);
+  }
+}
+function drawParticles(ctx){
+  for (let p of particles){
+    const t = 1 - (p.age / p.life);
+    if (p.type === 'shard'){
+      ctx.save();
+      ctx.globalAlpha = t;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y, p.size * 0.6, p.size * 0.9, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+    } else {
+      ctx.save();
+      ctx.globalAlpha = t*0.9;
+      ctx.fillStyle = 'rgba(120,110,100,0.6)';
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size * 0.8,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+  }
+}
+
+/* ---------- Projectiles ---------- */
+function launchGlass(sx,sy,tx,ty){
+  const angle = Math.atan2(ty - sy, tx - sx);
+  const speed = 300 + Math.random()*80;
+  projectiles.push({
+    x:sx,y:sy,
+    vx: Math.cos(angle)*speed,
+    vy: Math.sin(angle)*speed - 130,
+    life:2.4,
+    radius:8
+  });
+}
+function updateProjectiles(dt){
+  for (let i=projectiles.length-1;i>=0;i--){
+    const p = projectiles[i];
+    p.vy += 900 * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.life -= dt;
+    // hit items
+    for (let it of items){
+      if (it.broken) continue;
+      if (Math.hypot(p.x - it.x, p.y - it.y) < 30){
+        knockItem(it, 'glass');
+        spawnBreakParticles(it.x, it.y, 20, '#c9e9ff');
+        p.life = -1;
+        break;
+      }
+    }
+    if (p.life <= 0 || p.x < -150 || p.x > W + 150 || p.y > H + 200) projectiles.splice(i,1);
+  }
+}
+function drawProjectiles(ctx){
+  for (let p of projectiles){
+    ctx.save();
+    ctx.translate(p.x,p.y);
+    ctx.rotate(Math.atan2(p.vy,p.vx));
+    ctx.fillStyle = '#cfefff';
+    roundRect(ctx, -10, -6, 20, 12, 3, true);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    roundRect(ctx, -6, -4, 12, 6, 2, true);
+    ctx.restore();
+  }
+}
+
+/* ---------- Items ---------- */
+function initItems(){
+  items = ITEM_LAYOUT.map((p,i)=>({
+    id:i, type:p.type, x:p.x, y:p.y, w:40, h:40,
+    broken:false, wobble:0, protected:false, rot:0
+  }));
+}
+function drawItem(ctx,it){
+  ctx.save();
+  const wob = Math.sin(time*9 + it.id*2) * it.wobble * 6;
+  ctx.translate(it.x, it.y + wob);
+  ctx.rotate(it.rot);
+  if (it.broken){
+    // broken shards drawn by particles and light shards here
+    ctx.fillStyle = '#bdbdbd';
+    for (let s=0;s<5;s++){
+      ctx.beginPath();
+      ctx.moveTo((s-2)*6, 4 + s*1.6);
+      ctx.lineTo((s-2.5)*10, 12 + s*0.6);
+      ctx.lineTo((s-1)*8, 16 + s*0.3);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore(); return;
+  }
+  if (it.type === 'lamp'){
+    const grad = ctx.createLinearGradient(0,-28,0,12); grad.addColorStop(0,'#fffaf2'); grad.addColorStop(1,COLORS.lamp);
+    ctx.fillStyle = grad; ctx.beginPath(); ctx.ellipse(0,-18,26,18,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#c9a96f'; ctx.fillRect(-4,-6,8,22);
+    ctx.beginPath(); ctx.ellipse(0,18,16,6,0,0,Math.PI*2); ctx.fill();
+  } else if (it.type === 'vase'){
+    const g = ctx.createLinearGradient(0,-18,0,14); g.addColorStop(0,'#e6fbfd'); g.addColorStop(1,COLORS.vase);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(0,-20); ctx.bezierCurveTo(14,-20,22,-6,12,6); ctx.bezierCurveTo(20,16,8,26,0,26); ctx.bezierCurveTo(-8,26,-20,16,-12,6); ctx.bezierCurveTo(-22,-6,-14,-20,0,-20); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.beginPath(); ctx.ellipse(-6,-6,5,11,-0.6,0,Math.PI*2); ctx.fill();
+  } else {
+    ctx.fillStyle = (it.type === 'glass') ? COLORS.glass : COLORS.cup;
+    roundRect(ctx, -14, -12, 28, 26, 4, true);
+    ctx.fillStyle = 'rgba(255,255,255,0.45)'; roundRect(ctx, -8, -10, 16, 6, 3, true);
+  }
+  if (it.protected){
+    ctx.strokeStyle = 'rgba(255,213,79,0.95)'; ctx.lineWidth = 3; roundRect(ctx, -28, -28, 56, 56, 8, false);
+  }
+  ctx.restore();
+}
+
+/* ---------- Cats ---------- */
+function initCatsInside(){
+  cats = CAT_TYPES.map((t,i)=>({
+    id: i,
+    name: t.name,
+    color: t.color,
+    sprite: getSpriteForColor(t.color, t.name),
+    spriteFrame: 0,
+    frameTimer: 0,
+    x: 120 + i*160 + (i%2? -6:6),
+    y: H - 110 + (i%2?6:0),
+    vx: (Math.random()>0.5?1:-1) * (0.6 + Math.random()*0.6),
+    state: 'idle',
+    stateTimer: 0,
+    speed: 0.9 + Math.random()*0.9,
+    radius: 26,
+    throws: !!t.throws,
+    cooldown: 1 + Math.random()*2,
+    target: null
+  }));
+}
+
+/* Sprites retrieval (cache) */
+function getSpriteForColor(hex, name){
+  const key = name + '|' + hex;
+  if (spriteAtlas[key]) return spriteAtlas[key];
+  spriteAtlas[key] = generateCatSprite(hex, name);
+  return spriteAtlas[key];
+}
+
+/* ---------- Input ---------- */
+canvas.addEventListener('pointerdown', (e)=>{
+  if (!running) return;
+  const p = getCanvasPos(e);
+  // items first
+  for (let it of items){
+    if (it.broken) continue;
+    if (Math.hypot(p.x - it.x, p.y - it.y) < 44){
+      it.protected = true; it.wobble = 0; score += 2; if (!muted) clickSound();
+      setTimeout(()=> it.protected = false, 1800);
+      updateHUD(); return;
+    }
+  }
+  // cats (topmost first)
+  for (let i = cats.length - 1; i >= 0; i--){
+    const c = cats[i];
+    if (Math.hypot(p.x - c.x, p.y - c.y) < 42){
+      shooCat(c, p.x, p.y); return;
     }
   }
 });
 
-// Shoo a cat (push away, give score)
-function shooCat(cat, mx, my){
-  const ang = Math.atan2(cat.y - my, cat.x - mx);
-  cat.vx = Math.cos(ang) * (2.2 + Math.random()*0.8);
-  cat.state = 'scared';
-  cat.stateTimer = 0.9 + Math.random()*0.9;
-  score += 3;
-  if (!muted) meowSound();
-  updateHUD();
+/* ---------- Game methods ---------- */
+function shooCat(c, mx, my){
+  const ang = Math.atan2(c.y - my, c.x - mx);
+  c.vx = Math.cos(ang) * (260 + Math.random()*40);
+  c.state = 'scared'; c.stateTimer = 0.9 + Math.random()*0.8;
+  score += 6; if (!muted) meowSound(); updateHUD();
+}
+function spawnCat(){
+  const door = DOORS[Math.random() < 0.5 ? 0 : 1];
+  const t = CAT_TYPES[Math.floor(Math.random()*CAT_TYPES.length)];
+  const id = Math.floor(Math.random()*1e6);
+  const spawnX = door.x, spawnY = door.y + (Math.random()*6 - 3);
+  const dir = door.dir;
+  const c = {
+    id, name: t.name, color: t.color, sprite: getSpriteForColor(t.color, t.name),
+    spriteFrame: 0, frameTimer:0,
+    x: spawnX, y: spawnY, vx: 160 * dir,
+    state: 'entering', stateTimer:0.6 + Math.random()*0.8, speed:1.0 + Math.random()*0.5,
+    radius:26, throws:!!t.throws, cooldown:2 + Math.random()*3, target:null
+  };
+  const live = items.filter(i=>!i.broken);
+  c.target = live.length ? live[Math.floor(Math.random()*live.length)].id : null;
+  cats.push(c);
 }
 
-// Game update loop
+function knockItem(item, source){
+  if (item.broken) return;
+  item.broken = true; item.protected = false; item.wobble = 0; item.rot = (Math.random()-0.5)*0.6;
+  score = Math.max(0, score - 6); lives -= 1; updateHUD();
+  spawnBreakParticles(item.x, item.y, 22, (item.type==='glass'?'#c9e9ff':'#d1c7b2'));
+  if (!muted) smashSound();
+  // bump nearby items
+  for (let o of items){
+    if (o !== item && !o.broken && Math.hypot(o.x - item.x, o.y - item.y) < 160){
+      o.wobble = Math.min(1.4, o.wobble + 0.8); o.rot += (Math.random()-0.5)*0.12;
+    }
+  }
+  if (lives <= 0) running = false;
+}
+
+/* ---------- Utilities ---------- */
+function getCanvasPos(evt){
+  const rect = canvas.getBoundingClientRect();
+  return { x: (evt.clientX - rect.left), y: (evt.clientY - rect.top) };
+}
+
+function updateHUD(){ scoreEl.textContent = score; livesEl.textContent = lives; }
+
+/* ---------- Audio helpers (simple) ---------- */
+let audioCtx = null;
+function ensureAudio(){ if (muted) return null; if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); return audioCtx; }
+function tone(freq,dur,vol=0.06){ const ac = ensureAudio(); if(!ac) return; const o = ac.createOscillator(); const g = ac.createGain(); o.type='sine'; o.frequency.value = freq; g.gain.value=vol; o.connect(g); g.connect(ac.destination); o.start(); o.stop(ac.currentTime + dur); }
+function meowSound(){ tone(560,0.08,0.07); tone(420,0.06,0.04); }
+function clickSound(){ tone(1100,0.04,0.03); }
+function tossSound(){ tone(760,0.06,0.04); }
+function smashSound(){ tone(160,0.12,0.14); }
+
+/* ---------- Main loop ---------- */
+function init(){
+  spawnTimer = 0; time = 0; running = true; score = 0; lives = 3;
+  initItems(); initCatsInside();
+  projectiles = []; particles = [];
+  updateHUD();
+}
 let last = performance.now();
 function loop(now){
-  const dt = Math.min(0.035, (now - last)/1000);
-  last = now;
+  const dt = Math.min(0.035, (now - last)/1000); last = now;
   if (running){
     update(dt);
     draw();
@@ -193,468 +462,168 @@ function loop(now){
   }
   requestAnimationFrame(loop);
 }
-
 function update(dt){
   time += dt;
-  difficulty = 1 + Math.floor(time / 20);
+  spawnTimer += dt;
+  // spawn rate increases slightly over time
+  const spawnEvery = Math.max(1.0, 2.6 - Math.min(1.4, time/45));
+  if (spawnTimer >= spawnEvery){
+    spawnTimer = 0; spawnCat();
+  }
 
-  // cats behavior and movement
-  for (let c of cats){
-    c.stateTimer -= dt;
-    // randomly begin mischief more often as difficulty increases
-    if (c.state !== 'mischief' && Math.random() < 0.0035 * difficulty){
-      c.state = 'mischief';
-      c.stateTimer = 2.5 + Math.random()*3.2;
-      const live = items.filter(i=>!i.broken);
-      c.target = live.length ? live[Math.floor(Math.random()*live.length)].id : null;
+  // update cats
+  for (let i = cats.length - 1; i >= 0; i--){
+    const c = cats[i];
+    c.frameTimer += dt;
+    if (c.frameTimer > 0.12){
+      c.spriteFrame = (c.spriteFrame + 1) % FRAMES; c.frameTimer = 0;
     }
-    if (c.state === 'scared' && c.stateTimer <= 0) c.state = 'idle';
-
+    c.stateTimer -= dt;
+    if (c.state === 'entering'){
+      c.x += c.vx * dt;
+      if ((c.vx > 0 && c.x > 120) || (c.vx < 0 && c.x < W - 120)){
+        c.state = 'mischief'; c.stateTimer = 2.2 + Math.random()*2.2;
+      }
+      continue;
+    }
+    // mischief behavior: approach target
     if (c.state === 'mischief' && c.target != null){
-      const it = items.find(x=>x.id === c.target);
-      if (!it || it.broken) { c.state = 'idle'; continue; }
-      // approach target smoothly
+      const it = items.find(x=>x.id===c.target);
+      if (!it || it.broken){ c.state = 'idle'; continue; }
       const ang = Math.atan2(it.y - c.y, it.x - c.x);
-      c.x += Math.cos(ang) * (70 + difficulty*8) * dt * (c.speed*0.9);
-      c.y += Math.sin(time*2 + c.id) * 0.6 * dt * 28;
-      // if near, attempt to knock
-      if (Math.hypot(c.x - it.x, c.y - it.y) < 38){
-        if (!it.protected && Math.random() < 0.46 + 0.04 * difficulty){
-          // different cats have slightly different success rates
-          const base = (c.name === 'Chester') ? 0.55 : (c.name === 'Nibbles' || c.name === 'Dusty') ? 0.6 : 0.45;
-          if (Math.random() < base + 0.03 * difficulty){
-            knockItem(it, c);
-          } else {
-            it.wobble = Math.min(1.2, it.wobble + 0.6);
-          }
-        } else {
-          it.wobble = Math.min(0.9, it.wobble + 0.35);
-        }
-        c.state = 'idle';
-        c.stateTimer = 0.6;
+      c.x += Math.cos(ang) * (80 + Math.random()*24) * dt;
+      c.y += Math.sin(ang) * (12 + Math.random()*6) * dt;
+      if (Math.hypot(c.x - it.x, c.y - it.y) < 36){
+        if (!it.protected && Math.random() < 0.55) knockItem(it, c);
+        else it.wobble = Math.min(1.05, it.wobble + 0.6);
+        c.state = 'idle'; c.stateTimer = 0.7;
       }
     } else {
-      // idle wandering on floor
-      c.x += c.vx * (38 + difficulty*6) * dt;
+      // idle wander
+      const dir = Math.sign(c.vx) || 1;
+      c.x += dir * (36 + Math.random()*6) * dt;
       if (c.x < 48) { c.x = 48; c.vx = Math.abs(c.vx); }
       if (c.x > W - 48) { c.x = W - 48; c.vx = -Math.abs(c.vx); }
-      if (Math.random() < 0.0015) c.vx *= -1;
+      if (Math.random() < 0.0016) c.vx *= -1;
     }
 
-    // Kermit throws glasses (projectiles) when mischiefing
-    if (c.throws && c.state === 'mischief' && c.cooldown <= 0 && Math.random() < 0.035 * difficulty){
+    // Kermit throws glasses
+    if (c.throws && c.state === 'mischief' && c.cooldown <= 0 && Math.random() < 0.04){
       const live = items.filter(i=>!i.broken);
       if (live.length){
         const target = live[Math.floor(Math.random()*live.length)];
-        throwGlass(c.x, c.y - 8, target.x, target.y);
-        c.cooldown = 2 + Math.random()*2.2;
+        launchGlass(c.x, c.y - 8, target.x, target.y);
+        c.cooldown = 2.2 + Math.random()*2.4;
         if (!muted) tossSound();
       }
     }
     c.cooldown -= dt;
+
+    // remove scared/fast cats if they go far offscreen
+    if (c.state === 'scared' && (c.x < -150 || c.x > W + 150)) cats.splice(i,1);
   }
 
-  // items wobble decay and potential self-break if high wobble
+  // update items wobble & decay
   for (let it of items){
     if (it.broken) continue;
-    it.wobble = Math.max(0, it.wobble - dt * 0.9);
+    it.wobble = Math.max(0, it.wobble - dt*0.9);
     it.rot *= 0.98;
-    if (!it.protected && it.wobble > 1.05 && Math.random() < 0.028 * difficulty){
-      // break it from wobble alone
-      knockItem(it, null);
-    }
+    if (!it.protected && it.wobble > 1.15 && Math.random() < 0.03) knockItem(it, null);
   }
 
-  // projectiles update (glasses follow parabolic trajectories)
-  for (let p of projectiles){
-    p.vy += 600 * dt;
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
-    p.life -= dt;
-    // collisions with items
-    for (let it of items){
-      if (it.broken) continue;
-      if (Math.hypot(p.x - it.x, p.y - it.y) < 28){
-        knockItem(it, 'glass');
-        p.life = -1;
-        if (!muted) smashSound();
-      }
-    }
-    // hit floor: small bounce then disappear
-    if (p.y > H - 130 && p.life > 0){
-      p.vy *= -0.3;
-      p.vx *= 0.6;
-      p.life -= 0.25;
-      if (p.life <= 0 && !muted) smashSound();
-    }
-  }
-  projectiles = projectiles.filter(p => p.life > 0 && p.x > -120 && p.x < W + 120 && p.y < H + 200);
+  // projectiles & particles
+  updateProjectiles(dt);
+  updateParticles(dt);
 
-  // random extra mischief triggers
-  if (Math.random() < 0.0012 * difficulty){
-    const c = cats[Math.floor(Math.random()*cats.length)];
-    c.state = 'mischief';
-    c.stateTimer = 2 + Math.random()*3;
-    const live = items.filter(i=>!i.broken);
-    c.target = live.length ? live[Math.floor(Math.random()*live.length)].id : null;
-  }
+  // win condition
+  if (time >= surviveTarget && items.every(i=>!i.broken)) running = false;
 }
 
-// When a cat (or projectile) knocks an item
-function knockItem(item, source){
-  if (item.broken) return;
-  item.broken = true;
-  item.protected = false;
-  item.wobble = 0;
-  item.rot = (Math.random()-0.5)*0.6;
-  score = Math.max(0, score - 5);
-  lives -= 1;
-  updateHUD();
-  if (!muted) smashSound();
-  // bump neighbors' wobble
-  for (let o of items){
-    if (o !== item && !o.broken && Math.hypot(o.x - item.x, o.y - item.y) < 160){
-      o.wobble = Math.min(1.4, o.wobble + 0.7);
-      o.rot += (Math.random()-0.5)*0.12;
-    }
-  }
-  if (lives <= 0){
-    running = false;
-  }
-}
-
-// Launch glass projectile (thrown by Kermit)
-function throwGlass(sx, sy, tx, ty){
-  const angle = Math.atan2(ty - sy, tx - sx);
-  const speed = 240 + Math.random()*80;
-  projectiles.push({
-    x: sx, y: sy,
-    vx: Math.cos(angle) * speed,
-    vy: Math.sin(angle) * speed - 120,
-    life: 2.2, color: COLORS.glass
-  });
-}
-
-// Drawing: refined visuals with gradients, shadows, highlights
+/* ---------- Drawing ---------- */
 function draw(){
   ctx.clearRect(0,0,W,H);
-  // wallpaper + floor
-  drawRoom();
-
-  // tables and surfaces
-  drawTables();
-
+  drawRoom(); drawTables();
   // items
-  for (let it of items){
-    ctx.save();
-    // wobble visual (small vertical offset and rotation)
-    const wob = Math.sin(time*9 + it.id*2.2) * it.wobble * 6;
-    ctx.translate(it.x, it.y + wob);
-    ctx.rotate(it.rot);
-    if (it.broken){
-      drawBrokenItem(it);
-    } else {
-      drawItem(it);
-    }
-    if (it.protected && !it.broken){
-      // highlight outline
-      ctx.strokeStyle = 'rgba(255,213,79,0.9)';
-      ctx.lineWidth = 3;
-      roundRect(ctx, -30, -30, 60, 60, 8, true);
-    }
-    ctx.restore();
-  }
-
-  // cats (more detailed)
-  for (let c of cats){
-    drawCat(c);
-  }
-
-  // projectiles (glasses)
-  for (let p of projectiles){
-    drawGlassProjectile(p);
-  }
-
-  // overlay when game over or win
-  if (!running){
-    ctx.fillStyle = 'rgba(8,12,18,0.56)';
-    ctx.fillRect(0,0,W,H);
-    ctx.fillStyle = '#fff';
-    ctx.textAlign = 'center';
-    ctx.font = '36px system-ui';
-    ctx.fillText('Game Over', W/2, H/2 - 8);
-    ctx.font = '16px system-ui';
-    ctx.fillText('Press Restart to play again', W/2, H/2 + 22);
-  } else {
-    // win condition: survive a time threshold with no broken items
-    if (items.every(i => !i.broken) && time > 45){
-      running = false;
-      ctx.fillStyle = 'rgba(255,255,255,0.95)';
-      roundRect(ctx, W/2 - 260, H/2 - 80, 520, 160, 10, true);
-      ctx.fillStyle = '#1b3b4b';
-      ctx.textAlign = 'center';
-      ctx.font = '26px system-ui';
-      ctx.fillText('Great job — everything is safe!', W/2, H/2 - 8);
-      ctx.font = '14px system-ui';
-      ctx.fillText('Press Restart to play again', W/2, H/2 + 22);
-    }
-  }
+  for (let it of items) drawItem(ctx,it);
+  // particles under cats/projectiles
+  drawParticles(ctx);
+  // projectiles
+  drawProjectiles(ctx);
+  // cats (sprites)
+  for (let c of cats) drawCatSprite(ctx,c);
+  // HUD / overlays
+  drawHUD();
 }
 
-/* Drawing helpers */
-
-// Room background with subtle gradients
 function drawRoom(){
-  // wall
-  const wallGrad = ctx.createLinearGradient(0,0,0,H-120);
-  wallGrad.addColorStop(0, '#fffaf6');
-  wallGrad.addColorStop(1, '#f1e9e0');
-  ctx.fillStyle = wallGrad;
-  ctx.fillRect(0,0,W,H);
-
-  // floor area
-  ctx.fillStyle = COLORS.accent;
-  ctx.globalAlpha = 0.03;
-  ctx.fillRect(0,H-140,W,140);
-  ctx.globalAlpha = 1;
-
-  // baseboard
-  ctx.fillStyle = '#e8ded3';
-  ctx.fillRect(0,H-140,W,12);
+  const g = ctx.createLinearGradient(0,0,0,H-120);
+  g.addColorStop(0,'#fffdfb'); g.addColorStop(1,'#efe8e0');
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = '#e8ded3'; ctx.fillRect(0,H-140,W,14);
+  ctx.fillStyle = '#efe6dd'; ctx.fillRect(0,H-140,W,140);
+  ctx.fillStyle = 'rgba(0,0,0,0.04)'; ctx.fillRect(22,H-160,80,120); ctx.fillRect(W-102,H-160,80,120);
 }
 
-// Simple tables with depth
 function drawTables(){
   ctx.fillStyle = '#cbb79f';
-  // left table
   roundRect(ctx, 120, 90, 240, 14, 6, true);
-  // right table
   roundRect(ctx, 520, 90, 240, 14, 6, true);
-  // lower tables
   roundRect(ctx, 260, 200, 220, 14, 6, true);
   roundRect(ctx, 680, 200, 160, 14, 6, true);
 }
 
-// draw a specific item by type
-function drawItem(it){
-  if (it.type === 'lamp'){
-    // lamp base
-    const grad = ctx.createLinearGradient(0,-28,0,12);
-    grad.addColorStop(0, '#fff7ec');
-    grad.addColorStop(1, COLORS.lamp);
-    ctx.fillStyle = grad;
-    // shade the shade
-    ctx.beginPath();
-    ctx.ellipse(0,-18,26,18,0,0,Math.PI*2);
-    ctx.fill();
-    // stand
-    ctx.fillStyle = '#c9a96f';
-    ctx.fillRect(-4,-6,8,22);
-    // base
-    ctx.beginPath();
-    ctx.ellipse(0,18,16,6,0,0,Math.PI*2);
-    ctx.fill();
-  } else if (it.type === 'vase'){
-    // glossy vase
-    const g = ctx.createLinearGradient(0,-18,0,14);
-    g.addColorStop(0, '#dff7fb');
-    g.addColorStop(1, COLORS.vase);
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.moveTo(0,-20);
-    ctx.bezierCurveTo(14,-20,20,-6,10,6);
-    ctx.bezierCurveTo(18,16,8,26,0,26);
-    ctx.bezierCurveTo(-8,26,-18,16,-10,6);
-    ctx.bezierCurveTo(-20,-6,-14,-20,0,-20);
-    ctx.fill();
-    // highlight
-    ctx.fillStyle = 'rgba(255,255,255,0.45)';
-    ctx.beginPath();
-    ctx.ellipse(-6,-6,6,12, -0.6, 0, Math.PI*2);
-    ctx.fill();
-  } else if (it.type === 'glass' || it.type === 'cup'){
-    // glass/cup
-    ctx.fillStyle = (it.type === 'glass') ? COLORS.glass : COLORS.cup;
-    ctx.fillRect(-12,-12,24,26);
-    // rim highlight
-    ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    ctx.fillRect(-8,-10,16,6);
-  }
-}
-
-// draw broken shards
-function drawBrokenItem(it){
-  ctx.fillStyle = '#bdbdbd';
-  for (let s=0; s<6; s++){
-    ctx.beginPath();
-    ctx.moveTo((s-2.5)*6, 4 + s*1.6);
-    ctx.lineTo((s-3.5)*10, 12 + s*0.6);
-    ctx.lineTo((s-1.5)*8, 16 + s*0.3);
-    ctx.closePath();
-    ctx.fill();
-  }
-}
-
-// draw cat with more detailed shapes
-function drawCat(c){
+function drawCatSprite(ctx,c){
   ctx.save();
   ctx.translate(c.x, c.y);
-  // slight bobbing based on time and state
-  const bob = Math.sin(time*2 + c.id) * 2;
-  ctx.translate(0, bob);
-
-  // shadow
-  ctx.beginPath();
-  ctx.fillStyle = 'rgba(0,0,0,0.12)';
-  ctx.ellipse(0, 34, c.radius + 16, 10, 0, 0, Math.PI*2);
-  ctx.fill();
-
-  // body gradient
-  const bodyGrad = ctx.createLinearGradient(-20, -6, 20, 24);
-  bodyGrad.addColorStop(0, shadeColor(c.color, 12));
-  bodyGrad.addColorStop(1, shadeColor(c.color, -6));
-  ctx.fillStyle = bodyGrad;
-  // torso
-  roundRect(ctx, -26, -6, 52, 40, 22, true);
-
-  // head
-  ctx.save();
-  ctx.translate((c.vx>0 ? 8 : -8), -24);
-  const headCol = shadeColor(c.color, -8);
-  const headGrad = ctx.createLinearGradient(-18, -18, 18, 18);
-  headGrad.addColorStop(0, headCol);
-  headGrad.addColorStop(1, shadeColor(headCol, -18));
-  ctx.fillStyle = headGrad;
-  roundRect(ctx, -20, -18, 40, 34, 12, true);
-
-  // ears
-  drawTriangle(ctx, -12, -24, -6, -34, 0, -22, c.color);
-  drawTriangle(ctx, 12, -24, 6, -34, 0, -22, c.color);
-
-  // eyes (contrast depending on coat)
-  const eyeColor = (isLightColor(c.color) ? '#222' : '#fff');
-  ctx.fillStyle = eyeColor;
-  ctx.beginPath();
-  ctx.ellipse(-6, -6, 5, 6, 0, 0, Math.PI*2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.ellipse(6, -6, 5, 6, 0, 0, Math.PI*2);
-  ctx.fill();
-
-  // pupils
-  ctx.fillStyle = (eyeColor === '#fff') ? '#000' : '#111';
-  ctx.fillRect(-4, -4, 3, 4);
-  ctx.fillRect(8-6, -4, 3, 4);
-
-  // nose
-  ctx.fillStyle = '#e08b8b';
-  ctx.beginPath();
-  ctx.moveTo(0,-2); ctx.lineTo(-4,2); ctx.lineTo(4,2); ctx.closePath();
-  ctx.fill();
-  ctx.restore();
-
-  // tail (simple curved)
-  ctx.beginPath();
-  ctx.strokeStyle = shadeColor(c.color, -12);
-  ctx.lineWidth = 8;
-  ctx.lineCap = 'round';
-  ctx.moveTo(20, 0);
-  ctx.quadraticCurveTo(46, -10, 60, 6);
-  ctx.stroke();
-
-  // name tag
-  ctx.fillStyle = '#333';
-  ctx.font = '12px system-ui';
-  ctx.textAlign = 'center';
-  ctx.fillText(c.name, 0, 52);
+  const bob = Math.sin(time*2 + c.id) * 1.2;
+  ctx.translate(0,bob);
+  // draw sprite frame from atlas
+  if (c.sprite){
+    const sx = c.spriteFrame * SPR_W;
+    const sy = 0;
+    ctx.drawImage(c.sprite, sx, sy, SPR_W, SPR_H, -SPR_W/2, -SPR_H + 6, SPR_W, SPR_H);
+  } else {
+    // fallback simple circle
+    ctx.fillStyle = c.color; ctx.beginPath(); ctx.ellipse(0,0,24,18,0,0,Math.PI*2); ctx.fill();
+  }
+  // name
+  ctx.fillStyle = '#333'; ctx.font = '12px system-ui'; ctx.textAlign='center'; ctx.fillText(c.name, 0, 46);
   ctx.restore();
 }
 
-// Draw a thrown glass projectile
-function drawGlassProjectile(p){
+function drawHUD(){
+  // timer bar (top-left)
   ctx.save();
-  ctx.translate(p.x, p.y);
-  const angle = Math.atan2(p.vy, p.vx);
-  ctx.rotate(angle);
-  // cup/glass body
-  ctx.fillStyle = COLORS.glass;
-  ctx.fillRect(-10, -6, 20, 12);
-  ctx.fillStyle = 'rgba(255,255,255,0.6)';
-  ctx.fillRect(-6, -4, 12, 6);
-  // rim
-  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-  ctx.lineWidth = 1.2;
-  ctx.strokeRect(-10, -6, 20, 12);
+  const frac = Math.min(1, time / surviveTarget);
+  ctx.fillStyle = 'rgba(0,0,0,0.06)'; roundRect(ctx, 20, 18, 240, 10, 6, true);
+  ctx.fillStyle = COLORS.accent || '#2f6575'; roundRect(ctx, 20, 18, 240 * frac, 10, 6, true);
+  // overlay messages
+  if (!running){
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = '#fff'; ctx.textAlign='center';
+    ctx.font = '36px system-ui';
+    if (lives <= 0) ctx.fillText('Game Over — items broken', W/2, H/2 - 8);
+    else ctx.fillText('You kept everything safe!', W/2, H/2 - 8);
+    ctx.font = '16px system-ui'; ctx.fillText('Press Restart to play again', W/2, H/2 + 22);
+  }
   ctx.restore();
 }
 
-/* Misc draw utilities */
-function roundRect(ctx, x, y, w, h, r, fill){
-  const k = Math.min(r, Math.abs(w/2), Math.abs(h/2));
+/* ---------- Helpers ---------- */
+function roundRect(ctx,x,y,w,h,r,fill){
+  const k = Math.min(r,Math.abs(w/2),Math.abs(h/2));
   ctx.beginPath();
-  ctx.moveTo(x + k, y);
-  ctx.arcTo(x + w, y, x + w, y + h, k);
-  ctx.arcTo(x + w, y + h, x, y + h, k);
-  ctx.arcTo(x, y + h, x, y, k);
-  ctx.arcTo(x, y, x + w, y, k);
-  ctx.closePath();
+  ctx.moveTo(x+k,y); ctx.arcTo(x+w,y,x+w,y+h,k); ctx.arcTo(x+w,y+h,x,y+h,k); ctx.arcTo(x,y+h,x,y,k); ctx.arcTo(x,y,x+w,y,k); ctx.closePath();
   if (fill) ctx.fill(); else ctx.stroke();
 }
-function drawTriangle(ctx, x1,y1,x2,y2,x3,y3, color){
-  ctx.beginPath();
-  ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.lineTo(x3,y3); ctx.closePath();
-  ctx.fillStyle = color;
-  ctx.fill();
-}
 
-// quick color helpers
-function shadeColor(hex, percent){
-  // accepts hex or named values used above — naive implementation for our limited palette
-  // convert simple hex like #rrggbb
-  try {
-    if (hex[0] !== '#') return hex;
-    const num = parseInt(hex.slice(1),16);
-    const r = Math.min(255, Math.max(0, ((num >> 16) & 0xFF) + percent));
-    const g = Math.min(255, Math.max(0, ((num >> 8) & 0xFF) + percent));
-    const b = Math.min(255, Math.max(0, (num & 0xFF) + percent));
-    return '#' + ((1<<24) + (r<<16) + (g<<8) + b).toString(16).slice(1);
-  } catch(e){ return hex; }
-}
-function isLightColor(hex){
-  try {
-    if (hex[0] !== '#') return false;
-    const num = parseInt(hex.slice(1),16);
-    const r = (num>>16)&0xff, g=(num>>8)&0xff, b=num&0xff;
-    // perceived luminance
-    const lum = 0.2126*r + 0.7152*g + 0.0722*b;
-    return lum > 160;
-  } catch(e){ return false; }
-}
-
-/* Sound (minimal beeps) */
-let audioCtx = null;
-function ensureAudio(){ if (muted) return null; if (!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)(); return audioCtx; }
-function tone(freq,dur,vol=0.06){ const ac = ensureAudio(); if(!ac) return; const o = ac.createOscillator(); const g = ac.createGain(); o.type='sine'; o.frequency.value=freq; g.gain.value=vol; o.connect(g); g.connect(ac.destination); o.start(); o.stop(ac.currentTime+dur); }
-function meowSound(){ tone(560,0.08,0.07); tone(420,0.06,0.05); }
-function clickSound(){ tone(1100,0.04,0.03); }
-function tossSound(){ tone(760,0.06,0.04); }
-function smashSound(){ tone(160,0.12,0.14); }
-
-// HUD update
-function updateHUD(){ scoreEl.textContent = score; livesEl.textContent = lives; }
-
-// Controls
+/* ---------- Controls ---------- */
 restartBtn.addEventListener('click', ()=> init());
 muteBtn.addEventListener('click', ()=> { muted = !muted; muteBtn.textContent = muted ? 'Unmute' : 'Mute'; });
 
-// initialize and start
+/* ---------- Start ---------- */
 init();
 requestAnimationFrame(loop);
-
-// keep canvas responsive to DPI changes if needed
-window.addEventListener('resize', ()=> {
-  // no change to canvas CSS size; if you want to re-layout, you can update here.
-});
 </script>
 </body>
 </html>
