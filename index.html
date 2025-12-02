@@ -1,44 +1,460 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
-<title>Cat Chaos Defender</title>
-<meta name="apple-mobile-web-app-capable" content="yes">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Stop the Cats!</title>
 <style>
-  body,html{margin:0;height:100%;overflow:hidden;background:#ffe4e1;font-family:system-ui}
-  canvas{display:block;width:100%;height:100%;background:#f5f5dc}
-  #msg{position:fixed;top:10px;left:50%;transform:translateX(-50%);color:#333;font:bold 18px system-ui;text-align:center;z-index:10;pointer-events:none;background:rgba(255,255,255,0.7);padding:8px 16px;border-radius:12px}
+  :root{--bg:#f7f6f4;--hud:#222;--lamp:#f3d08a;--vase:#9ec5d6;--glass:#bfe6ff}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:var(--bg);display:flex;align-items:center;justify-content:center}
+  .wrap{width:960px;max-width:96vw;padding:16px;display:flex;flex-direction:column;gap:12px;align-items:center}
+  canvas{background:linear-gradient(#fff 0 60%, #efe9df 60%);border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,0.12)}
+  .hud{width:100%;display:flex;justify-content:space-between;align-items:center;color:var(--hud);font-weight:600}
+  button{padding:8px 12px;border-radius:8px;border:1px solid rgba(0,0,0,0.08);background:#fff;cursor:pointer}
+  .legend{display:flex;gap:12px;align-items:center;font-size:13px;color:#444}
+  .dot{width:14px;height:14px;border-radius:50%;display:inline-block;margin-right:6px}
 </style>
 </head>
 <body>
-<div id="msg">Tap cats to scare them!<br>Kermit throws glasses!</div>
-<canvas id="cv"></canvas>
+<div class="wrap">
+  <div class="hud">
+    <div>Lives: <span id="lives">3</span></div>
+    <div class="legend">
+      <div><span class="dot" style="background:orange"></span>Nibbles & Dusty</div>
+      <div><span class="dot" style="background:gray"></span>Chester</div>
+      <div><span class="dot" style="background:black"></span>Kermit (throws cups)</div>
+    </div>
+    <div>Score: <span id="score">0</span></div>
+  </div>
+  <canvas id="game" width="900" height="500"></canvas>
+  <div style="display:flex;gap:8px">
+    <button id="restart">Restart</button>
+    <button id="mute">Mute</button>
+  </div>
+</div>
+
 <script>
-const canvas=document.getElementById('cv'),ctx=canvas.getContext('2d');
-let w=canvas.width=window.innerWidth,h=canvas.height=window.innerHeight;
-window.addEventListener('resize',()=>{w=canvas.width=innerWidth;h=canvas.height=innerHeight});
+/*
+  "Stop the Cats!" — single-file game
+  - Click or tap a cat to shoo it; clicking an item prevents immediate knock over.
+  - Kermit (black) occasionally throws cups that travel and can break items.
+  - Items: lamps, vases, glasses. If broken, you lose lives. Score for scaring cats, saving items.
+*/
 
-let score=0,high=localStorage.hs||0,lives=5,gameOver=false;
-let items=[],cats=[],glasses=[];
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const livesEl = document.getElementById('lives');
+const restartBtn = document.getElementById('restart');
+const muteBtn = document.getElementById('mute');
 
-// Real emojis
-const catEmoji = {oscar:'Cat1',nibbles:'Cat2',dusty:'Cat3',chester:'Cat4',kermit:'Cat5'};
-const itemEmoji = {g:'Glass',l:'Lamp'};
+let W = canvas.width, H = canvas.height;
+let rng = n=>Math.random()*n;
+let cats = [];       // cat entities
+let items = [];      // household objects
+let projectiles = []; // cups thrown by Kermit
+let lives = 3, score = 0, running = true, muted = false;
+let spawnTimer = 0, difficulty = 1, time = 0;
 
-function initItems(){items=[];lives=5;for(let i=0;i<5;i++)items.push({x:w*0.7+40+i*60,y:h*0.65-50,type:Math.random()>0.5?'g':'l'})}
-function spawnCat(){
-  const type=['oscar','nibbles','dusty','chester','kermit'][Math.floor(Math.random()*5)];
-  const kermit=type==='kermit';
-  const vx=(1.8+Math.random()*0.8+(kermit?1.8:0))*(w/800);
-  const y=[h*0.38,h*0.48,h*0.58,h*0.68][Math.floor(Math.random()*4)];
-  cats.push({x:-120,y,vx,type,scared:false,throwTimer:kermit?Math.random()*60:0});
+// Define cats (five total): Nibbles & Dusty (orange), Chester (gray tabby), Kermit (black), + one extra orange
+const CAT_TYPES = [
+  {name:'Nibbles', color:'orange'},
+  {name:'Dusty',  color:'orange'},
+  {name:'Chester',color:'gray'},
+  {name:'Kermit', color:'black', throws:true},
+  {name:'Mango',   color:'orange'}
+];
+
+// Item types with positions and break state
+const ITEM_TYPES = [
+  {type:'lamp',  color:getComputedStyle(document.documentElement).getPropertyValue('--lamp') || '#f3d08a'},
+  {type:'vase',  color:getComputedStyle(document.documentElement).getPropertyValue('--vase') || '#9ec5d6'},
+  {type:'glass', color:getComputedStyle(document.documentElement).getPropertyValue('--glass') || '#bfe6ff'}
+];
+
+function init() {
+  cats = [];
+  items = [];
+  projectiles = [];
+  lives = 3;
+  score = 0;
+  difficulty = 1;
+  time = 0;
+  running = true;
+  // place five cats at random floor positions
+  for (let i=0;i<5;i++){
+    let t = CAT_TYPES[i];
+    cats.push({
+      id:i, name:t.name, color:t.color, x:50 + i*140 + rng(40), y: H - 70 + rng(6),
+      vx: (Math.random()>0.5?1:-1)* (0.4 + rng(0.6)), speed: 0.6 + rng(0.9),
+      state:'idle', stateTimer: rng(2), radius:18, throws: !!t.throws, cooldown: rng(3)
+    });
+  }
+  // place items on tables — at fixed-ish positions
+  const positions = [
+    {x:220,y:150}, {x:440,y:120}, {x:660,y:155}, {x:140,y:240}, {x:760,y:240}
+  ];
+  for (let i=0;i<positions.length;i++){
+    const p = positions[i];
+    const t = ITEM_TYPES[i % ITEM_TYPES.length];
+    items.push({
+      id:i, type:t.type, color:t.color, x:p.x, y:p.y, broken:false, w:28, h:28, wobble:0, protected:false
+    });
+  }
+  updateHUD();
 }
-function sound(f=800,t='sine'){const a=new AudioContext(),o=a.createOscillator(),g=a.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(0.4,a.currentTime);g.gain.exponentialRampToValueAtTime(0.01,a.currentTime+0.25);o.connect(g);g.connect(a.destination);o.start();o.stop(a.currentTime+0.25)}
-function loseLife(){if(lives-->0&&items.length)items.splice(Math.floor(Math.random()*items.length),1);sound(100,'sawtooth');if(lives<=0){gameOver=true;high=Math.max(score,high);localStorage.hs=high}}
 
-canvas.addEventListener('touchstart',e=>e.preventDefault()||tap(e),{passive:false});
-canvas.addEventListener('click',tap);
-function tap(e){
-  if(gameOver){score=0;lives=5;items=[];cats=[];glasses=[];gameOver=false;initItems();spawnCat();return}
-  const x=e.touches?e.touches[0].clientX:e.clientX
+// Helper: distance
+function dist(a,b){ return Math.hypot(a.x-b.x,a.y-b.y); }
+
+// Input: click/tap behavior
+canvas.addEventListener('pointerdown', (e)=>{
+  if (!running) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) * (canvas.width/rect.width);
+  const my = (e.clientY - rect.top) * (canvas.height/rect.height);
+
+  // Check if clicked an item to "secure" it (temporary protect)
+  for (let it of items){
+    if (!it.broken && Math.abs(mx-it.x)<=40 && Math.abs(my-it.y)<=40){
+      it.protected = true;
+      it.wobble = 0;
+      score += 1; // small bonus for protecting
+      updateHUD();
+      if (!muted) clickSound();
+      setTimeout(()=> it.protected = false, 1500);
+      return;
+    }
+  }
+
+  // Check cats
+  for (let c of cats){
+    if (Math.hypot(mx-c.x,my-c.y) <= 36){
+      // Shoo the cat: push it away and reset its mischief
+      const angle = Math.atan2(c.y - my, c.x - mx);
+      c.vx = Math.cos(angle) * (1.5 + Math.random()*0.6);
+      c.state = 'scared';
+      c.stateTimer = 0.7 + Math.random()*0.6;
+      score += 2;
+      updateHUD();
+      if (!muted) meowSound();
+      return;
+    }
+  }
+});
+
+// Game loop
+let last = performance.now();
+function loop(now){
+  const dt = Math.min(0.035, (now - last)/1000);
+  last = now;
+  if (running) {
+    update(dt);
+    draw();
+  } else {
+    draw(); // still draw final
+  }
+  requestAnimationFrame(loop);
+}
+
+function update(dt){
+  time += dt;
+  spawnTimer += dt;
+  // slowly ramp difficulty
+  difficulty = 1 + Math.floor(time/15);
+
+  // cats behavior
+  for (let c of cats){
+    c.stateTimer -= dt;
+    // occasionally set to mischief (approach items)
+    if (c.state !== 'mischief' && Math.random() < 0.002 * difficulty) {
+      c.state = 'mischief';
+      c.stateTimer = 4 + Math.random()*3;
+      // pick a target item
+      const liveItems = items.filter(i=>!i.broken);
+      c.target = liveItems.length ? liveItems[Math.floor(Math.random()*liveItems.length)].id : null;
+    }
+    // scared recovers to wander
+    if (c.state === 'scared' && c.stateTimer <= 0) { c.state = 'idle'; }
+
+    // movement
+    if (c.state === 'mischief' && c.target != null){
+      const it = items.find(x=>x.id===c.target);
+      if (it && !it.broken){
+        const angle = Math.atan2(it.y - c.y, it.x - c.x);
+        c.vx += Math.cos(angle)*0.03 * c.speed * difficulty;
+        c.vx *= 0.98;
+        // move horizontally toward target
+        c.x += c.vx * (40 + difficulty*6) * dt;
+        // if reached near item, attempt to knock it over
+        if (Math.hypot(c.x - it.x, c.y - it.y) < 36 && !it.protected){
+          // knock over chance scales with difficulty and whether cat is Nibbles/Dusty/Chester
+          if (Math.random() < 0.35 + 0.05 * difficulty){
+            breakItem(it, c);
+          } else {
+            // nudge item wobble
+            it.wobble = Math.min(1, it.wobble + 0.6);
+          }
+          c.state = 'idle';
+          c.stateTimer = 0.5;
+        }
+      } else {
+        c.state = 'idle';
+      }
+    } else {
+      // idle wander on the floor (left-right)
+      c.x += c.vx * (40 + difficulty*4) * dt;
+      // bounce off edges with some randomness
+      if (c.x < 40) { c.x = 40; c.vx = Math.abs(c.vx); }
+      if (c.x > W - 40) { c.x = W - 40; c.vx = -Math.abs(c.vx); }
+      if (Math.random() < 0.002) c.vx *= -1;
+      // occasional pounce noise
+      if (Math.random() < 0.001) if (!muted) purrSound();
+    }
+
+    // Kermit throws cups occasionally if in mischief and cooldown ready
+    if (c.throws && c.state === 'mischief' && c.cooldown <= 0 && Math.random() < 0.02 * difficulty){
+      // pick a direction to throw (toward a random item)
+      const liveItems = items.filter(i=>!i.broken);
+      if (liveItems.length){
+        const target = liveItems[Math.floor(Math.random()*liveItems.length)];
+        let angle = Math.atan2(target.y - c.y, target.x - c.x);
+        projectiles.push({
+          x: c.x, y: c.y - 8,
+          vx: Math.cos(angle) * (180 + 40 * difficulty),
+          vy: Math.sin(angle) * (180 + 40 * difficulty) - 80,
+          life: 3, color:'#6b6b6b'
+        });
+        c.cooldown = 2.5 + Math.random()*2;
+        if (!muted) tossSound();
+      }
+    }
+    c.cooldown -= dt;
+  }
+
+  // update items wobble and check if wobble broke them (rare)
+  for (let it of items){
+    if (it.broken) continue;
+    // wobble decays
+    it.wobble = Math.max(0, it.wobble - dt*0.8);
+    // if wobble too high and not protected, chance to break
+    if (!it.protected && it.wobble > 0.95 && Math.random() < 0.02 * difficulty){
+      // find a random cat near; or just break
+      breakItem(it, null);
+    }
+  }
+
+  // update projectiles (cups)
+  for (let p of projectiles){
+    p.vy += 400 * dt; // gravity
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.life -= dt;
+    // collision with items: if close enough, break the item
+    for (let it of items){
+      if (it.broken) continue;
+      if (Math.hypot(p.x - it.x, p.y - it.y) < 30){
+        breakItem(it, 'projectile');
+        p.life = -1;
+        if (!muted) smashSound();
+      }
+    }
+  }
+  // remove expired projectiles
+  projectiles = projectiles.filter(p=>p.life>0 && p.x > -50 && p.x < W+50 && p.y < H+200);
+
+  // small random events: cats begin mischief more often as difficulty rises
+  if (Math.random() < 0.001 * difficulty) {
+    const c = cats[Math.floor(Math.random()*cats.length)];
+    c.state = 'mischief';
+    c.stateTimer = 3 + Math.random()*3;
+    const liveItems = items.filter(i=>!i.broken);
+    c.target = liveItems.length ? liveItems[Math.floor(Math.random()*liveItems.length)].id : null;
+  }
+}
+
+// Break an item
+function breakItem(it, source){
+  if (it.broken) return;
+  it.broken = true;
+  it.protected = false;
+  score = Math.max(0, score - 3); // penalty
+  lives -= 1;
+  updateHUD();
+  if (!muted) smashSound();
+  // if source is cat, extra chance of chained knock over (increase wobble on nearby)
+  for (let other of items){
+    if (other !== it && !other.broken && Math.hypot(other.x-it.x, other.y-it.y) < 150){
+      other.wobble = Math.min(1.2, other.wobble + 0.5);
+    }
+  }
+  if (lives <= 0){
+    running = false;
+  }
+}
+
+// Drawing
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  // floor/room
+  // draw couch/bench (simple rectangle)
+  ctx.fillStyle = '#e0c9b3';
+  ctx.fillRect(0,H-100,W,100);
+  // draw items (tables)
+  for (let it of items){
+    ctx.save();
+    ctx.translate(it.x, it.y);
+    // wobble visual
+    const wob = Math.sin(time*8 + it.id*3) * it.wobble * 4;
+    ctx.translate(0,wob);
+    if (it.broken){
+      // shards
+      ctx.fillStyle = '#aaaaaa';
+      ctx.globalAlpha = 0.9;
+      for (let s=0;s<6;s++){
+        ctx.fillRect(-8 + s*6, 8 + s*2, 4, 2);
+      }
+      ctx.globalAlpha = 1;
+    } else {
+      ctx.fillStyle = it.color;
+      // simple shapes per type
+      if (it.type === 'lamp'){
+        ctx.fillRect(-6,-18,12,30);
+        ctx.beginPath();
+        ctx.moveTo(-18,-18); ctx.lineTo(18,-18); ctx.lineTo(10,-32); ctx.lineTo(-10,-32); ctx.closePath();
+        ctx.fill();
+      } else if (it.type === 'vase'){
+        ctx.beginPath();
+        ctx.ellipse(0,0,10,14,0,0,Math.PI*2);
+        ctx.fill();
+      } else { // glass
+        ctx.fillStyle = it.color;
+        ctx.fillRect(-8,-10,16,18);
+      }
+    }
+    // protected outline
+    if (it.protected && !it.broken){
+      ctx.strokeStyle = '#ffd54d';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(-18,-22,36,36);
+    }
+    ctx.restore();
+  }
+
+  // draw cats
+  for (let c of cats){
+    // body shadow
+    ctx.beginPath();
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    ctx.ellipse(c.x, c.y+24, c.radius+10, 8, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // body
+    ctx.beginPath();
+    ctx.fillStyle = c.color;
+    ctx.ellipse(c.x, c.y, c.radius+6, c.radius+10, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // head
+    ctx.beginPath();
+    ctx.fillStyle = shade(c.color, -20);
+    ctx.ellipse(c.x + (c.vx>0?6:-6), c.y-10, c.radius-2, c.radius-2, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // eyes (simple)
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(c.x-6, c.y-13, 6, 6);
+    ctx.fillRect(c.x+2, c.y-13, 6, 6);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(c.x-4 + (c.vx>0?1:-1), c.y-12, 3, 3);
+    ctx.fillRect(c.x+4 + (c.vx>0?1:-1), c.y-12, 3, 3);
+
+    // name label
+    ctx.fillStyle = '#333';
+    ctx.font = '12px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText(c.name, c.x, c.y+36);
+  }
+
+  // draw projectiles (cups)
+  for (let p of projectiles){
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(Math.atan2(p.vy,p.vx));
+    ctx.fillStyle = '#6b6b6b';
+    ctx.fillRect(-8, -6, 16, 12);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(-4, -4, 8, 6);
+    ctx.restore();
+  }
+
+  // HUD overlay when game over
+  if (!running){
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.font = '28px system-ui';
+    ctx.fillText('Game Over', W/2, H/2 - 8);
+    ctx.font = '16px system-ui';
+    ctx.fillText('Refresh or press Restart to play again', W/2, H/2 + 16);
+  }
+}
+
+// Utility: update HUD DOM
+function updateHUD(){
+  scoreEl.textContent = score;
+  livesEl.textContent = lives;
+}
+
+// Utility: color shade helper
+function shade(col, percent){
+  // accepts basic named colors and hex; for simplicity, map orange/gray/black
+  if (col === 'orange') return '#ff9f1c';
+  if (col === 'gray') return '#9aa0a6';
+  if (col === 'black') return '#222';
+  return col;
+}
+
+/* Simple sounds using WebAudio */
+let audioCtx = null;
+function ensureAudio(){
+  if (muted) return null;
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+function beep(freq,dur,vol=0.06){
+  const ac = ensureAudio(); if(!ac) return;
+  const o = ac.createOscillator();
+  const g = ac.createGain();
+  o.type='sine'; o.frequency.value = freq;
+  g.gain.value = vol;
+  o.connect(g); g.connect(ac.destination);
+  o.start();
+  o.stop(ac.currentTime + dur);
+}
+function meowSound(){ beep(550,0.09,0.06); beep(420,0.07,0.04); }
+function purrSound(){ beep(220,0.06,0.02); }
+function tossSound(){ beep(700,0.06,0.04); }
+function smashSound(){ beep(120,0.12,0.12); }
+function clickSound(){ beep(1000,0.04,0.03); }
+
+// Buttons
+restartBtn.addEventListener('click', ()=>{ init(); });
+muteBtn.addEventListener('click', ()=>{
+  muted = !muted;
+  muteBtn.textContent = muted ? 'Unmute' : 'Mute';
+});
+
+// Start
+init();
+requestAnimationFrame(loop);
+
+// Resize handling
+window.addEventListener('resize', ()=> {
+  // keep canvas size fixed but could adapt — no action needed for this simple demo
+});
+</script>
+</body>
+</html>
